@@ -1,0 +1,16 @@
+README.md
+  h_6bfb1d88d0b1fe 10
+requirements.txt
+  h_6bfb1d88d0b1fe 21,32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "d51b5ea3d12984698e6933eb5015e442347e6b82",
+  "prompts": {},
+  "humans": {
+    "h_6bfb1d88d0b1fe": {
+      "author": "ShubhamPrajapati1402 <scprajapati14@gmail.com>"
+    }
+  }
+}
