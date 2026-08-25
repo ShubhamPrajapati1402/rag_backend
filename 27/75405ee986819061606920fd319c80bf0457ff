@@ -1,0 +1,18 @@
+app/scripts/ingest.py
+  h_6bfb1d88d0b1fe 35-39
+app/services/document_processor.py
+  h_6bfb1d88d0b1fe 18,22
+requirements.txt
+  h_6bfb1d88d0b1fe 17,19,27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "2775405ee986819061606920fd319c80bf0457ff",
+  "prompts": {},
+  "humans": {
+    "h_6bfb1d88d0b1fe": {
+      "author": "ShubhamPrajapati1402 <scprajapati14@gmail.com>"
+    }
+  }
+}
