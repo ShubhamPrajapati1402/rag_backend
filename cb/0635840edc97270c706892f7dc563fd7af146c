@@ -1,0 +1,30 @@
+.env.example
+  h_6bfb1d88d0b1fe 1-9
+.gitignore
+  h_6bfb1d88d0b1fe 1-7
+app/__init__.py
+  h_6bfb1d88d0b1fe 1
+app/api/__init__.py
+  h_6bfb1d88d0b1fe 1
+app/core/__init__.py
+  h_6bfb1d88d0b1fe 1
+app/db/__init__.py
+  h_6bfb1d88d0b1fe 1
+app/models/__init__.py
+  h_6bfb1d88d0b1fe 1
+app/services/__init__.py
+  h_6bfb1d88d0b1fe 1
+app/utils/__init__.py
+  h_6bfb1d88d0b1fe 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "cb0635840edc97270c706892f7dc563fd7af146c",
+  "prompts": {},
+  "humans": {
+    "h_6bfb1d88d0b1fe": {
+      "author": "ShubhamPrajapati1402 <scprajapati14@gmail.com>"
+    }
+  }
+}
