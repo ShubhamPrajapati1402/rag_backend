@@ -15,10 +15,11 @@ def process_pdf(file_path: str):
     logger.info("This may take a moment as it analyzes the layout and tables...")
     
     # Partition the PDF (this reads the structure, paragraphs, and tables)
-    # strategy="hi_res" is required for complex layouts like the World Bank report
+    # Using hi_res for maximum accuracy with tables, and multiprocessing to split the pages across your CPU cores!
     elements = partition_pdf(
         filename=file_path,
         strategy="hi_res",
+        multiprocessing=True,
     )
     
     logger.info(f"Successfully extracted {len(elements)} raw elements from PDF.")
