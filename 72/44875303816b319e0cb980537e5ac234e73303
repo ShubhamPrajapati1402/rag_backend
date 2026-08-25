@@ -1,0 +1,16 @@
+app/services/document_processor.py
+  h_6bfb1d88d0b1fe 1-47
+app/services/embeddings.py
+  h_6bfb1d88d0b1fe 1-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "7244875303816b319e0cb980537e5ac234e73303",
+  "prompts": {},
+  "humans": {
+    "h_6bfb1d88d0b1fe": {
+      "author": "ShubhamPrajapati1402 <scprajapati14@gmail.com>"
+    }
+  }
+}
