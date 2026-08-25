@@ -1,0 +1,16 @@
+.env.example
+  h_6bfb1d88d0b1fe 35
+.gitattributes
+  h_6bfb1d88d0b1fe 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "607b1a287359097700df156c99d569b7f375d9eb",
+  "prompts": {},
+  "humans": {
+    "h_6bfb1d88d0b1fe": {
+      "author": "ShubhamPrajapati1402 <scprajapati14@gmail.com>"
+    }
+  }
+}
