@@ -1,0 +1,31 @@
+# Web Framework
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+
+# Environment Variables
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
+
+# Database & ORM
+SQLAlchemy>=2.0.0
+psycopg2-binary>=2.9.7
+pgvector>=0.2.3
+
+# (Optional) Supabase Official Client
+supabase>=2.3.0
+
+# AI & RAG Framework
+langchain>=0.1.0
+langchain-groq>=0.0.1
+langchain-huggingface>=0.0.1
+
+# Document Parsing & OCR (For complex layouts & scanned PDFs)
+pypdf>=4.0.0
+unstructured[all-docs]>=0.12.0
+pdf2image>=1.17.0
+pytesseract>=0.3.10
+pdfplumber>=0.10.0
+pandas>=2.0.0
+
+# Logging & Telemetry
+loguru>=0.7.2
