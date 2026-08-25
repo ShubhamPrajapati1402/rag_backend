@@ -4,10 +4,15 @@ This is the backend for a Retrieval-Augmented Generation (RAG) application. It h
 
 ## Tech Stack
 
-* **Package Management & Virtual Environment:** `uv`
+* **Web Framework:** FastAPI (running on Uvicorn)
+* **Database ORM:** SQLAlchemy (with `pgvector` extension)
+* **Database & Vector Store:** Supabase Cloud (PostgreSQL)
+* **RAG Framework:** LangChain
 * **Embeddings:** Hugging Face API
 * **Large Language Model (LLM):** Groq API
-* **Database & Vector Store:** Supabase Cloud (PostgreSQL with `pgvector` extension)
+* **Document Parsing & OCR:** `unstructured`, `pytesseract`, `pdfplumber`
+* **Logging:** `loguru`
+* **Package Management & Virtual Environment:** `uv`
 
 ## Folder Structure
 
