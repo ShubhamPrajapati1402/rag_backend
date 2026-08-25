@@ -1,0 +1,16 @@
+.env.example
+  h_6bfb1d88d0b1fe 1-17,20-22,24-26
+README.md
+  h_6bfb1d88d0b1fe 1-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "d5aa125bfcd68b3253e23ceb43280bf8ca39a953",
+  "prompts": {},
+  "humans": {
+    "h_6bfb1d88d0b1fe": {
+      "author": "ShubhamPrajapati1402 <scprajapati14@gmail.com>"
+    }
+  }
+}
