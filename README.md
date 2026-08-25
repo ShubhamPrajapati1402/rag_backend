@@ -7,7 +7,7 @@ This is the backend for a Retrieval-Augmented Generation (RAG) application. It h
 * **Web Framework:** FastAPI (running on Uvicorn)
 * **Database ORM:** SQLAlchemy (with `pgvector` extension)
 * **Database & Vector Store:** Supabase Cloud (PostgreSQL)
-* **RAG Framework:** LangChain
+* **RAG Framework:** LangChain & LangGraph (for Agentic RAG)
 * **Embeddings:** Hugging Face API
 * **Large Language Model (LLM):** Groq API
 * **Document Parsing & OCR:** `unstructured`, `pytesseract`, `pdfplumber`
@@ -52,7 +52,7 @@ The virtual environment has already been created. To activate it on Windows, run
    * **Groq API Key:** Get it from the [Groq Console](https://console.groq.com/keys)
    * **Groq Model Name:** Set to `llama3-8b-8192` (or your preferred model)
    * **Hugging Face Token:** Get it from your [Hugging Face Settings](https://huggingface.co/settings/tokens)
-   * **Hugging Face Model:** Set to `sentence-transformers/all-MiniLM-L6-v2` (or your preferred model)
+   * **Hugging Face Model:** Set to `BAAI/bge-m3` (or your preferred model)
    * **Supabase Connection (URI):** Click "Connect" on your Supabase dashboard and copy the Direct Connection URI.
    * **Supabase URL & Key:** Found under Configuration -> API Keys (use the Secret key for the backend).
    * **Supabase JWT Secret:** Found under Configuration -> JWT Keys (useful if implementing auth later).
