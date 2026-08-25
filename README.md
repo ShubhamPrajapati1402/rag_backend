@@ -7,7 +7,7 @@ This is the backend for a Retrieval-Augmented Generation (RAG) application. It h
 * **Web Framework:** FastAPI (running on Uvicorn)
 * **Database ORM:** SQLAlchemy (with `pgvector` extension)
 * **Database & Vector Store:** Supabase Cloud (PostgreSQL)
-* **RAG Framework:** LangChain
+* **RAG Framework:** LangChain & LangGraph (for Agentic RAG)
 * **Embeddings:** Hugging Face API
 * **Large Language Model (LLM):** Groq API
 * **Document Parsing & OCR:** `unstructured`, `pytesseract`, `pdfplumber`
