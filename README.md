@@ -43,10 +43,14 @@ The virtual environment has already been created. To activate it on Windows, run
    ```powershell
    cp .env.example .env
    ```
-2. Open the `.env` file and fill in your API keys:
+2. Open the `.env` file and fill in your configuration:
    * **Groq API Key:** Get it from the [Groq Console](https://console.groq.com/keys)
+   * **Groq Model Name:** Set to `llama3-8b-8192` (or your preferred model)
    * **Hugging Face Token:** Get it from your [Hugging Face Settings](https://huggingface.co/settings/tokens)
-   * **Supabase Database URL:** Get the Connection String (URI) from your Supabase Project settings.
+   * **Hugging Face Model:** Set to `sentence-transformers/all-MiniLM-L6-v2` (or your preferred model)
+   * **Supabase Connection (URI):** Click "Connect" on your Supabase dashboard and copy the Direct Connection URI.
+   * **Supabase URL & Key:** Found under Configuration -> API Keys (use the Secret key for the backend).
+   * **Supabase JWT Secret:** Found under Configuration -> JWT Keys (useful if implementing auth later).
 
 ### 4. Running the Application
 *(Instructions will be added here once the main API server is implemented)*
