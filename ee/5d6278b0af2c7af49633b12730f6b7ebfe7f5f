@@ -1,0 +1,22 @@
+.env.example
+  h_6bfb1d88d0b1fe 13
+README.md
+  h_6bfb1d88d0b1fe 55
+app/core/config.py
+  h_6bfb1d88d0b1fe 1-28
+app/db/session.py
+  h_6bfb1d88d0b1fe 1-39
+app/models/document.py
+  h_6bfb1d88d0b1fe 1-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "ee5d6278b0af2c7af49633b12730f6b7ebfe7f5f",
+  "prompts": {},
+  "humans": {
+    "h_6bfb1d88d0b1fe": {
+      "author": "ShubhamPrajapati1402 <scprajapati14@gmail.com>"
+    }
+  }
+}
