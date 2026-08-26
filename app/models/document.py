@@ -1,10 +1,32 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, JSON
+import enum
+from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, ForeignKey, UniqueConstraint, Enum
 from sqlalchemy.orm import declarative_base
 from pgvector.sqlalchemy import Vector
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 Base = declarative_base()
+
+class DocumentStatus(str, enum.Enum):
+    NEW = "NEW"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+class Document(Base):
+    """
+    SQLAlchemy model representing the 'documents' table.
+    Tracks files by their SHA-256 hash to ensure idempotency.
+    """
+    __tablename__ = "documents"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String, nullable=False)
+    file_hash = Column(String, unique=True, index=True, nullable=False)
+    config_hash = Column(String, nullable=False)
+    status = Column(Enum(DocumentStatus), default=DocumentStatus.NEW, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(ZoneInfo("Asia/Kolkata")))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(ZoneInfo("Asia/Kolkata")), onupdate=lambda: datetime.now(ZoneInfo("Asia/Kolkata")))
 
 class DocumentChunk(Base):
     """
@@ -17,8 +39,8 @@ class DocumentChunk(Base):
     # Unique identifier for each chunk
     id = Column(Integer, primary_key=True, index=True)
     
-    # The name of the original file (e.g., 'World Bank Report 2025.pdf')
-    source = Column(String, index=True, nullable=False) 
+    # Foreign key to the parent document
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False, index=True)
     
     # The specific page number the chunk was extracted from
     page_number = Column(Integer, nullable=True)
@@ -38,3 +60,7 @@ class DocumentChunk(Base):
     
     # Timestamp of when the chunk was saved to the database (in IST)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(ZoneInfo("Asia/Kolkata")))
+
+    __table_args__ = (
+        UniqueConstraint('document_id', 'chunk_index', name='uix_doc_chunk_index'),
+    )
