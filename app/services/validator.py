@@ -309,8 +309,18 @@ class DocumentValidator:
         report_lines.append("")
         
         final_status = "PASS"
+        fallback_pages = set()
+        
         if elements_missing > 0 or t_missing > 0 or empty_chunks > 0:
             final_status = "FAIL"
+            # Identify pages that caused the fail
+            for t in self.tables:
+                if t["status"] == "MISSING":
+                    fallback_pages.add(t["page"])
+            for c in coverage_details:
+                if c["status"] == "MISSING":
+                    fallback_pages.add(c["page"])
+                    
         elif suspicious_pages > 0 or pages_missing > 0 or t_partial > 0:
             final_status = "WARNING"
             
@@ -320,4 +330,4 @@ class DocumentValidator:
         
         report_text = "\n".join(report_lines)
         
-        return report_text
+        return report_text, final_status, sorted(list(fallback_pages))
