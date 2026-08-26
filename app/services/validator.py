@@ -2,6 +2,7 @@ import os
 import json
 import time
 import unicodedata
+import difflib
 from collections import defaultdict
 from typing import List, Dict, Any
 
@@ -116,6 +117,7 @@ class DocumentValidator:
         giant_chunk_string = " ||| ".join(chunk_texts_norm) # Just for fallback matching
         
         elements_fully_represented = 0
+        elements_split_across_chunks = 0
         elements_partially_represented = 0
         elements_missing = 0
         
@@ -149,7 +151,7 @@ class DocumentValidator:
                 # Check for table status
                 for t in self.tables:
                     if t["element_index"] == idx:
-                        t["status"] = "OK"
+                        t["status"] = "FULLY_REPRESENTED"
                         
                 # Duplication analysis (normal overlap hits 2 chunks, maybe 3. If > 3, suspicious)
                 if len(matched_indices) > 3:
@@ -160,20 +162,44 @@ class DocumentValidator:
                         "text_preview": text[:100]
                     })
             else:
-                # Try partial match or fallback
-                # If 80% of the normalized text is in the giant string, consider partial
-                half_len = len(norm_text) // 2
-                if half_len > 10 and (norm_text[:half_len] in giant_chunk_string or norm_text[half_len:] in giant_chunk_string):
+                covered = [False] * len(norm_text)
+                matched_chunks = set()
+                words = set(norm_text.split())
+                for c_idx, c_norm in enumerate(chunk_texts_norm):
+                    c_words = set(c_norm.split())
+                    if len(words.intersection(c_words)) > 0:
+                        s = difflib.SequenceMatcher(None, norm_text, c_norm, autojunk=False)
+                        has_match = False
+                        for match in s.get_matching_blocks():
+                            if match.size > 20: 
+                                has_match = True
+                                for i in range(match.a, match.a + match.size):
+                                    covered[i] = True
+                        if has_match:
+                            matched_chunks.add(c_idx)
+                
+                coverage_pct = sum(covered) / len(norm_text) if len(norm_text) > 0 else 0
+                matched_indices = list(matched_chunks)
+                
+                if coverage_pct >= 0.98:
+                    status = "SPLIT_ACROSS_CHUNKS"
+                    elements_split_across_chunks += 1
+                    for t in self.tables:
+                        if t["element_index"] == idx:
+                            t["status"] = "SPLIT_ACROSS_CHUNKS"
+                            t["chunks_spanned"] = len(matched_indices)
+                elif coverage_pct > 0.5:
                     status = "PARTIALLY_REPRESENTED"
-                    coverage_pct = 50.0
                     elements_partially_represented += 1
+                    for t in self.tables:
+                        if t["element_index"] == idx:
+                            t["status"] = "PARTIALLY_REPRESENTED"
                 else:
                     status = "MISSING"
                     elements_missing += 1
-                    # Update table status
                     for t in self.tables:
                         if t["element_index"] == idx:
-                            t["status"] = "ERROR_MISSING"
+                            t["status"] = "MISSING"
 
             coverage_details.append({
                 "element_index": idx,
@@ -234,11 +260,22 @@ class DocumentValidator:
         
         report_lines.append("TABLE VALIDATION")
         report_lines.append("----------------")
-        tables_ok = sum(1 for t in self.tables if t["status"] == "OK")
+        t_fully = sum(1 for t in self.tables if t["status"] == "FULLY_REPRESENTED")
+        t_split = sum(1 for t in self.tables if t["status"] == "SPLIT_ACROSS_CHUNKS")
+        t_partial = sum(1 for t in self.tables if t["status"] == "PARTIALLY_REPRESENTED")
+        t_missing = sum(1 for t in self.tables if t["status"] == "MISSING")
         report_lines.append(f"Tables detected: {len(self.tables)}")
-        report_lines.append(f"Tables preserved: {tables_ok}")
-        report_lines.append(f"Tables missing: {len(self.tables) - tables_ok}")
+        report_lines.append(f"Tables fully represented: {t_fully}")
+        report_lines.append(f"Tables split across chunks: {t_split}")
+        report_lines.append(f"Tables partially represented: {t_partial}")
+        report_lines.append(f"Tables missing: {t_missing}")
         report_lines.append("")
+        if t_split > 0:
+            report_lines.append("Split Tables Details:")
+            for t in self.tables:
+                if t["status"] == "SPLIT_ACROSS_CHUNKS":
+                    report_lines.append(f"  - Table at index {t['element_index']} (Page {t['page']}) spans {t.get('chunks_spanned', 0)} chunks.")
+            report_lines.append("")
         
         report_lines.append("CHUNK VALIDATION")
         report_lines.append("----------------")
@@ -272,9 +309,9 @@ class DocumentValidator:
         report_lines.append("")
         
         final_status = "PASS"
-        if elements_missing > 0 or tables_ok < len(self.tables) or empty_chunks > 0:
+        if elements_missing > 0 or t_missing > 0 or empty_chunks > 0:
             final_status = "FAIL"
-        elif suspicious_pages > 0 or pages_missing > 0:
+        elif suspicious_pages > 0 or pages_missing > 0 or t_partial > 0:
             final_status = "WARNING"
             
         report_lines.append("FINAL RESULT")
