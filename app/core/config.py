@@ -16,7 +16,8 @@ class Settings(BaseSettings):
     # Embeddings
     HUGGINGFACE_API_KEY: str
     HUGGINGFACE_EMBEDDING_MODEL: str
-    
+    EMBEDDING_MAX_WORKERS: int
+    DOCUMENT_LEASE_MINUTES: int 
     # Supabase APIs (Optional but good to have)
     SUPABASE_URL: str
     SUPABASE_KEY: str
