@@ -200,7 +200,7 @@ def ingest_pdf(file_path: str):
     
     # 4. Parse and chunk the PDF
     try:
-        all_chunks = process_pdf(file_path)
+        all_chunks = process_pdf(file_path, strategy=settings.PDF_PARSING_STRATEGY)
     except Exception as e:
         logger.error(f"Failed to process PDF: {e}")
         db = SessionLocal()
@@ -331,25 +331,80 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     if args.validate:
+        strategy = os.environ.get("PDF_PARSING_STRATEGY", settings.PDF_PARSING_STRATEGY)
         logger.info(f"Running in VALIDATION MODE for: {args.pdf_path}")
-        logger.info("Database and embeddings will NOT be modified.")
+        logger.info(f"Database and embeddings will NOT be modified. Strategy: {strategy.upper()}")
         
-        start_time = time.time()
+        t0 = time.time()
         
-        elements = extract_raw_elements(args.pdf_path)
-        extract_time = time.time() - start_time
-        
-        validator = DocumentValidator(elements)
-        validator.record_timing("pdf_partitioning_duration", extract_time)
+        extract_start = time.time()
+        elements = extract_raw_elements(args.pdf_path, strategy=strategy)
+        extract_time = time.time() - extract_start
         
         chunk_start = time.time()
         chunks = create_chunks(elements)
-        validator.record_timing("chunking_duration", time.time() - chunk_start)
+        chunk_time = time.time() - chunk_start
         
         logger.info("Running validation subsystem...")
-        report = validator.run_validation(chunks)
+        validator = DocumentValidator(elements)
+        val_start = time.time()
+        report, status, fallback_pages = validator.run_validation(chunks)
+        val_time = time.time() - val_start
         
         print("\n\n" + report + "\n\n")
-        logger.info(f"Validation complete. Total time: {time.time() - start_time:.2f}s")
+        
+        if strategy == "hybrid" and status == "FAIL" and fallback_pages:
+            print("--------------------------------------------------")
+            print("HYBRID FALLBACK")
+            print("--------------------------------------------------")
+            print("Validation detected structural loss.")
+            print(f"Affected pages: {', '.join(map(str, fallback_pages))}")
+            print("Reprocessing with HI_RES...\n")
+            
+            fb_extract_start = time.time()
+            fb_elements = extract_raw_elements(args.pdf_path, strategy="hi_res_fallback", fallback_pages=fallback_pages)
+            fb_extract_time = time.time() - fb_extract_start
+            
+            elements = [el for el in elements if getattr(el.metadata, 'page_number', 0) not in fallback_pages]
+            elements.extend(fb_elements)
+            
+            from collections import defaultdict
+            page_groups = defaultdict(list)
+            for el in elements:
+                p = getattr(el.metadata, 'page_number', 0) or 0
+                page_groups[p].append(el)
+            
+            elements = []
+            for p in sorted(page_groups.keys()):
+                elements.extend(page_groups[p])
+                
+            fb_chunk_start = time.time()
+            chunks = create_chunks(elements)
+            fb_chunk_time = time.time() - fb_chunk_start
+            
+            print("\nRe-running validation...\n")
+            validator = DocumentValidator(elements)
+            fb_val_start = time.time()
+            report, status, _ = validator.run_validation(chunks)
+            fb_val_time = time.time() - fb_val_start
+            
+            print("\n\n" + report + "\n\n")
+            
+            extract_time += fb_extract_time
+            chunk_time += fb_chunk_time
+            val_time += fb_val_time
+            
+        total_time = time.time() - t0
+        print("==================================================")
+        print("PARSER BENCHMARK")
+        print("==================================================")
+        print(f"Strategy          Time")
+        print("--------------------------------")
+        print(f"{strategy.upper():<17} {total_time:.2f} sec")
+        print("\nBreakdown:")
+        print(f"Extraction        {extract_time:.2f} sec")
+        print(f"Chunking          {chunk_time:.2f} sec")
+        print(f"Validation        {val_time:.2f} sec")
+        print("==================================================\n")
     else:
         ingest_pdf(args.pdf_path)
