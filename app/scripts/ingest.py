@@ -17,10 +17,12 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.document import Document, DocumentChunk, DocumentStatus
-from app.services.document_processor import process_pdf
+from app.services.document_processor import process_pdf, extract_raw_elements, create_chunks
+from app.services.validator import DocumentValidator
 from app.services.embeddings import get_embeddings_model
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import update, or_, and_
+import argparse
 
 def get_file_hash(file_path: str) -> str:
     """Calculates the SHA-256 hash of the actual file bytes."""
@@ -322,5 +324,32 @@ def ingest_pdf(file_path: str):
         db.close()
 
 if __name__ == "__main__":
-    target_pdf = os.path.join(os.getcwd(), "data", "uploads", "World Bank Group Annual Report 2025.pdf")
-    ingest_pdf(target_pdf)
+    parser = argparse.ArgumentParser(description="Ingest PDFs into PostgreSQL RAG backend.")
+    parser.add_argument("pdf_path", nargs="?", default=os.path.join(os.getcwd(), "data", "uploads", "World Bank Group Annual Report 2025.pdf"), help="Path to the PDF file")
+    parser.add_argument("--validate", action="store_true", help="Run validation mode instead of full ingestion")
+    
+    args = parser.parse_args()
+    
+    if args.validate:
+        logger.info(f"Running in VALIDATION MODE for: {args.pdf_path}")
+        logger.info("Database and embeddings will NOT be modified.")
+        
+        start_time = time.time()
+        
+        elements = extract_raw_elements(args.pdf_path)
+        extract_time = time.time() - start_time
+        
+        validator = DocumentValidator(elements)
+        validator.record_timing("pdf_partitioning_duration", extract_time)
+        
+        chunk_start = time.time()
+        chunks = create_chunks(elements)
+        validator.record_timing("chunking_duration", time.time() - chunk_start)
+        
+        logger.info("Running validation subsystem...")
+        report = validator.run_validation(chunks)
+        
+        print("\n\n" + report + "\n\n")
+        logger.info(f"Validation complete. Total time: {time.time() - start_time:.2f}s")
+    else:
+        ingest_pdf(args.pdf_path)

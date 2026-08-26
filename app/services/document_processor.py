@@ -3,38 +3,32 @@ from loguru import logger
 from unstructured.partition.pdf import partition_pdf
 from unstructured.chunking.title import chunk_by_title
 
-def process_pdf(file_path: str):
-    """
-    Uses the Unstructured library to parse a PDF, extracting text and tables,
-    and then chunks it intelligently based on the document's structure (titles, sections).
-    """
+def extract_raw_elements(file_path: str, strategy: str = "hi_res"):
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"PDF not found at: {file_path}")
         
     logger.info(f"Starting to parse PDF: {file_path}")
     logger.info("This may take a moment as it analyzes the layout and tables...")
     
-    # Partition the PDF (this reads the structure, paragraphs, and tables)
-    # Using hi_res for maximum accuracy with tables, and multiprocessing to split the pages across your CPU cores!
     elements = partition_pdf(
         filename=file_path,
-        strategy="hi_res",
+        strategy=strategy,
         multiprocessing=True,
     )
     
     logger.info(f"Successfully extracted {len(elements)} raw elements from PDF.")
-    
-    # Chunk the elements by title (this groups paragraphs under their respective headers)
+    return elements
+
+def create_chunks(elements):
     chunks = chunk_by_title(
         elements,
-        max_characters=1500,     # Max size of a chunk
-        new_after_n_chars=1000,  # Try to break if it gets larger than this
-        overlap=200              # Overlap slightly so context isn't lost between chunks
+        max_characters=1500,
+        new_after_n_chars=1000,
+        overlap=200
     )
     
     logger.info(f"Successfully grouped document into {len(chunks)} logical chunks.")
     
-    # Format chunks into a clean dictionary so we can easily save them to our database later
     formatted_chunks = []
     for i, chunk in enumerate(chunks):
         metadata = chunk.metadata.to_dict()
@@ -46,3 +40,10 @@ def process_pdf(file_path: str):
         })
         
     return formatted_chunks
+
+def process_pdf(file_path: str):
+    """
+    Backward-compatible wrapper for normal ingestion.
+    """
+    elements = extract_raw_elements(file_path)
+    return create_chunks(elements)
