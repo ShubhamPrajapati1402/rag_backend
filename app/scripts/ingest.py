@@ -1,10 +1,6 @@
 import os
 import sys
 from loguru import logger
-
-# Ensure Python can find the 'app' module when running this script from the root directory
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-
 from app.db.session import SessionLocal
 from app.models.document import DocumentChunk
 from app.services.document_processor import process_pdf
@@ -35,6 +31,11 @@ def ingest_pdf(file_path: str):
     try:
         # Extract just the raw text strings for the embedding model
         texts_to_embed = [chunk["text_content"] for chunk in chunks]
+        
+        # Preview the first chunk so the user can see what the text looks like!
+        if texts_to_embed:
+            logger.info("Here is a preview of the text from Chunk 1 before we turn it into math:")
+            logger.info(f"\n{'-'*50}\n{texts_to_embed[0]}\n{'-'*50}\n")
         
         # Generate the math vectors via the Hugging Face API
         logger.info("Calling Hugging Face API... (This might take a minute depending on document size)")
