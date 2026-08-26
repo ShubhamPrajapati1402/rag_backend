@@ -1,6 +1,10 @@
 import os
 import sys
 from loguru import logger
+
+# Required so Python can find the 'app' module
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
 from app.db.session import SessionLocal
 from app.models.document import DocumentChunk
 from app.services.document_processor import process_pdf
