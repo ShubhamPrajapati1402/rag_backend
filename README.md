@@ -4,13 +4,14 @@ This is the backend for a Retrieval-Augmented Generation (RAG) application. It h
 
 ## Current State
 
-The project currently implements a **Production-Grade Data Ingestion Pipeline**. It can process complex PDFs, extract text and tables, chunk the content logically, generate vector embeddings, and store them securely in a PostgreSQL database using pgvector. The FastAPI endpoints and LLM retrieval logic are planned for future development.
+The project currently implements a **Production-Grade Multi-Format Data Ingestion Pipeline**. It can process 10+ file formats (PDF, Markdown, DOCX, CSV, Excel, HTML, JSON, PPTX, XML, TXT), extract structural text and tables, chunk the content using semantic format-specific strategies, generate vector embeddings, and store them securely in a PostgreSQL database using pgvector. The FastAPI endpoints and LLM retrieval logic are planned for future development.
 
 The ingestion pipeline is designed for enterprise-level robustness, featuring:
 - **Idempotency & Resumability**: If the server crashes during ingestion, the pipeline automatically resumes exactly where it left off, down to the specific chunk.
-- **Atomic Leasing**: Distributed locks prevent two processes from processing the same PDF concurrently.
-- **Hybrid PDF Parsing**: A dynamic classification system that routes pages seamlessly between deep vision analysis and fast text extraction.
-- **Automated Fallback Validation**: A deterministic safety engine that verifies chunk coverage and table preservation, automatically recovering corrupted pages.
+- **Atomic Leasing**: Distributed locks prevent two processes from processing the same document concurrently.
+- **Dynamic Parser Registry**: Automatically routes files to their optimal parsing library (e.g., `pandas` for CSV, `beautifulsoup4` for HTML).
+- **Semantic Chunking**: Groups context intelligently based on format (e.g., Markdown heading paths, Excel sheet boundaries).
+- **Hybrid PDF Parsing & Fallback Engine**: Uses lightweight classification to route complex PDF pages to OCR and basic text pages to fast extractors, with deterministic safety mechanisms for perfect table preservation.
 
 ## Tech Stack
 
@@ -20,7 +21,7 @@ The ingestion pipeline is designed for enterprise-level robustness, featuring:
 * **Embeddings:** Hugging Face Inference API (`BAAI/bge-m3`)
 * **Large Language Model (LLM):** Groq API (Planned)
 * **RAG Framework:** LangChain & LangGraph
-* **Document Parsing & OCR:** `unstructured` (hi_res and fast strategies), `pytesseract`, `pdfplumber`
+* **Document Parsing & OCR:** `unstructured`, `pdfplumber`, `markdown-it-py`, `pandas`, `python-docx`, `python-pptx`, `beautifulsoup4`
 * **Logging:** `loguru`
 * **Package Management:** `uv`
 
@@ -39,11 +40,20 @@ rag_backend/
 ├── data/
 │   └── uploads/      # Storage for source PDFs to be ingested
 └── tests/            # Unit and integration tests
+└── tests/            # Unit and integration tests
 ```
 
 ## Advanced Architecture Deep Dive
 
-### 1. Hybrid PDF Parsing
+### 1. Multi-Format Parser Registry
+Rather than using a single monolithic extraction library, the pipeline leverages an extensible `ParserRegistry`. When a file is ingested, the system automatically routes it to an optimized format-specific parser extending the `BaseParser` interface:
+
+* **Tabular (CSV, TSV, Excel)**: Uses `pandas`. Rows are parsed into structured textual key-value maps. During chunking, boundaries are strictly enforced (e.g., a chunk will **never** contain data from two different Excel sheets).
+* **Semantic Hierarchies (Markdown, DOCX, HTML, XML, JSON)**: Uses targeted libraries (`markdown-it-py`, `python-docx`, `beautifulsoup4`). The parsers track internal paths (like `<H1> > <H2>` or `user.orders[0]`). Chunks are sealed perfectly at these section boundaries so unrelated topics are never mixed.
+* **Slides (PPTX)**: Uses `python-pptx`. Chunks strictly respect slide boundaries (1 Slide = 1 Chunk).
+* **Plain Text (TXT)**: Relies on `\n\n` paragraph boundaries. Uses rolling character counts, with dynamic fallbacks for massive unbroken blocks of text.
+
+### 2. Hybrid PDF Parsing
 Parsing PDFs heavily using OCR and vision models (`hi_res`) is accurate but incredibly slow. The traditional `fast` parser is fast but fundamentally destroys tables and complex structural layouts.
 
 To solve this, the pipeline uses a `hybrid` parsing architecture:
@@ -52,14 +62,14 @@ To solve this, the pipeline uses a `hybrid` parsing architecture:
 - **Seamless Merge**: The pipeline temporarily shatters the PDF into isolated one-page documents, processes them using their designated strategy, restores the original metadata, and merges them back in perfect sequential order before chunking.
 - **Result**: Parses documents up to 3x faster with 0% structural loss.
 
-### 2. Validation & Automated Fallback
-The `app/services/validator.py` acts as a strict firewall for data integrity.
+### 3. Validation & Automated Fallback
+The `app/services/validator.py` subsystem acts as a strict firewall for data integrity. Every parser implements a format-specific validator (`MarkdownValidator`, `CSVValidator`, etc.).
 - **Chunk Tracking**: Ensures no content chunks were lost or ordered incorrectly.
-- **Coverage Analysis**: Uses a sliding window algorithm (`difflib.SequenceMatcher`) to guarantee that 100% of the raw, un-chunked table content perfectly survived into the final chunked representations, even handling chunk-overlap overlap correctly.
-- **Targeted Fallback**: If the classifier accidentally misses a complex table and routes it to `fast` (causing structural loss), the Validator intercepts the failure. The specific pages that failed are flagged, re-run exclusively through `hi_res_fallback`, patched back into the timeline, re-chunked, and re-validated automatically.
+- **Coverage Analysis (PDF)**: Uses a sliding window algorithm to guarantee that 100% of raw table content survived into the final chunks.
+- **Targeted Fallback (PDF)**: If a table is lost during a `fast` pass, the specific failed pages are flagged, run exclusively through `hi_res_fallback`, patched back into the timeline, and re-validated.
 
-### 3. Atomic Database Operations
-- **Leasing**: When `ingest.py` begins processing a PDF, it acquires a time-bound lease (`DOCUMENT_LEASE_MINUTES`). Other workers attempting to process the same `file_hash` are gracefully blocked.
+### 4. Atomic Database Operations
+- **Leasing**: When `ingest.py` begins processing a file, it acquires a time-bound lease. Other workers attempting to process the same `file_hash` are gracefully blocked.
 - **Resumability**: Only chunks that are not already present in the database are processed. If an API rate-limit halts embedding chunk #50, the next ingestion run skips chunks 1-49 and resumes instantly at #50.
 - **Configuration Protection**: Documents are stamped with a `config_hash`. If chunk size parameters or embedding models change in the code, the pipeline aborts ingestion for partially processed files to prevent mixed-vector poisoning.
 
@@ -90,15 +100,15 @@ To activate the virtual environment on Windows, run:
 
 ### 4. Running the Ingestion Pipeline
 
-To ingest a PDF into your vector database, place it in the `data/uploads/` directory and run:
+To ingest a document (e.g., `.pdf`, `.md`, `.docx`, `.csv`, `.json`) into your vector database, place it in the `data/uploads/` directory and run:
 
 ```powershell
 uv run python app/scripts/ingest.py "data/uploads/your_file.pdf"
 ```
 
 #### Validation & Benchmark Mode
-To test a PDF's classification and validate structural correctness without hitting the database, modifying PostgreSQL records, or generating embeddings, run:
+To test a document's extraction and chunking (and for PDFs, structural correctness) without hitting the database or generating embeddings, run:
 ```powershell
 uv run python app/scripts/ingest.py --validate "data/uploads/your_file.pdf"
 ```
-This prints a highly detailed terminal benchmark displaying table preservation, fallback loops, missing content, and speed metrics.
+This prints a highly detailed terminal benchmark displaying element extraction rates, fallback loops (if applicable), chunking behavior, and speed metrics.
