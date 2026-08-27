@@ -17,8 +17,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.document import Document, DocumentChunk, DocumentStatus
-from app.services.document_processor import process_pdf, extract_raw_elements, create_chunks
-from app.services.validator import DocumentValidator
+import app.services.parsers  # Trigger registry initialization
+from app.services.parsers.registry import ParserRegistry
 from app.services.embeddings import get_embeddings_model
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import update, or_, and_
@@ -113,7 +113,7 @@ def persist_batch(document_id: int, chunks_batch: list, embeddings: list):
     finally:
         db.close()
 
-def ingest_pdf(file_path: str):
+def ingest_file(file_path: str):
     logger.info(f"Starting ingestion process for: {file_path}")
     
     file_hash = get_file_hash(file_path)
@@ -198,9 +198,12 @@ def ingest_pdf(file_path: str):
         
     logger.info(f"Found {len(persisted_indices)} chunks already persisted for this document.")
     
-    # 4. Parse and chunk the PDF
+    # 4. Parse and chunk the file
     try:
-        all_chunks = process_pdf(file_path, strategy=settings.PDF_PARSING_STRATEGY)
+        # Pass PDF_PARSING_STRATEGY for PDF backwards compatibility. Non-PDF parsers will ignore it.
+        parser = ParserRegistry.get_parser(file_path, strategy=settings.PDF_PARSING_STRATEGY)
+        elements = parser.parse(file_path)
+        all_chunks = parser.chunk(elements)
     except Exception as e:
         logger.error(f"Failed to process PDF: {e}")
         db = SessionLocal()
@@ -337,62 +340,82 @@ if __name__ == "__main__":
         
         t0 = time.time()
         
+        try:
+            parser = ParserRegistry.get_parser(args.pdf_path, strategy=strategy)
+        except ValueError as e:
+            logger.error(f"Validation failed: {e}")
+            sys.exit(1)
+            
         extract_start = time.time()
-        elements = extract_raw_elements(args.pdf_path, strategy=strategy)
+        elements = parser.parse(args.pdf_path)
         extract_time = time.time() - extract_start
         
         chunk_start = time.time()
-        chunks = create_chunks(elements)
+        chunks = parser.chunk(elements)
         chunk_time = time.time() - chunk_start
         
-        logger.info("Running validation subsystem...")
-        validator = DocumentValidator(elements)
-        val_start = time.time()
-        report, status, fallback_pages = validator.run_validation(chunks)
-        val_time = time.time() - val_start
-        
-        print("\n\n" + report + "\n\n")
-        
-        if strategy == "hybrid" and status == "FAIL" and fallback_pages:
-            print("--------------------------------------------------")
-            print("HYBRID FALLBACK")
-            print("--------------------------------------------------")
-            print("Validation detected structural loss.")
-            print(f"Affected pages: {', '.join(map(str, fallback_pages))}")
-            print("Reprocessing with HI_RES...\n")
-            
-            fb_extract_start = time.time()
-            fb_elements = extract_raw_elements(args.pdf_path, strategy="hi_res_fallback", fallback_pages=fallback_pages)
-            fb_extract_time = time.time() - fb_extract_start
-            
-            elements = [el for el in elements if getattr(el.metadata, 'page_number', 0) not in fallback_pages]
-            elements.extend(fb_elements)
-            
-            from collections import defaultdict
-            page_groups = defaultdict(list)
-            for el in elements:
-                p = getattr(el.metadata, 'page_number', 0) or 0
-                page_groups[p].append(el)
-            
-            elements = []
-            for p in sorted(page_groups.keys()):
-                elements.extend(page_groups[p])
-                
-            fb_chunk_start = time.time()
-            chunks = create_chunks(elements)
-            fb_chunk_time = time.time() - fb_chunk_start
-            
-            print("\nRe-running validation...\n")
-            validator = DocumentValidator(elements)
-            fb_val_start = time.time()
-            report, status, _ = validator.run_validation(chunks)
-            fb_val_time = time.time() - fb_val_start
+        val_time = 0.0
+        if hasattr(parser, 'get_validator'):
+            logger.info("Running validation subsystem...")
+            validator = parser.get_validator()
+            val_start = time.time()
+            report, status, fallback_pages = validator.validate(chunks)
+            val_time = time.time() - val_start
             
             print("\n\n" + report + "\n\n")
             
-            extract_time += fb_extract_time
-            chunk_time += fb_chunk_time
-            val_time += fb_val_time
+            if strategy == "hybrid" and status == "FAIL" and fallback_pages:
+                print("--------------------------------------------------")
+                print("HYBRID FALLBACK")
+                print("--------------------------------------------------")
+                print("Validation detected structural loss.")
+                print(f"Affected pages: {', '.join(map(str, fallback_pages))}")
+                print("Reprocessing with HI_RES...\n")
+                
+                fb_parser = ParserRegistry.get_parser(args.pdf_path, strategy="hi_res_fallback", fallback_pages=fallback_pages)
+                fb_extract_start = time.time()
+                fb_elements = fb_parser.parse(args.pdf_path)
+                fb_extract_time = time.time() - fb_extract_start
+                
+                # Replace elements (assumes DocumentElement metadata contains page_number)
+                elements = [el for el in elements if el.metadata.get('page_number') not in fallback_pages]
+                elements.extend(fb_elements)
+                
+                from collections import defaultdict
+                page_groups = defaultdict(list)
+                for el in elements:
+                    p = el.metadata.get('page_number', 0)
+                    page_groups[p].append(el)
+                
+                elements = []
+                for p in sorted(page_groups.keys()):
+                    elements.extend(page_groups[p])
+                    
+                fb_chunk_start = time.time()
+                chunks = parser.chunk(elements)
+                fb_chunk_time = time.time() - fb_chunk_start
+                
+                print("\nRe-running validation...\n")
+                # Validator needs the updated elements
+                if hasattr(fb_parser, 'get_validator'):
+                    validator = fb_parser.get_validator()
+                else:
+                    # Manually update the original validator (PDFValidator caches raw_elements)
+                    # This is specifically for PDFValidator backwards compat
+                    validator = parser.get_validator()
+                    validator.raw_elements = fb_parser._cached_raw_elements if hasattr(fb_parser, '_cached_raw_elements') else []
+                    
+                fb_val_start = time.time()
+                report, status, _ = validator.validate(chunks)
+                fb_val_time = time.time() - fb_val_start
+                
+                print("\n\n" + report + "\n\n")
+                
+                extract_time += fb_extract_time
+                chunk_time += fb_chunk_time
+                val_time += fb_val_time
+        else:
+            logger.info("No validator implemented for this format.")
             
         total_time = time.time() - t0
         print("==================================================")
@@ -407,4 +430,4 @@ if __name__ == "__main__":
         print(f"Validation        {val_time:.2f} sec")
         print("==================================================\n")
     else:
-        ingest_pdf(args.pdf_path)
+        ingest_file(args.pdf_path)
