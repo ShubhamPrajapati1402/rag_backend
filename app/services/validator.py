@@ -4,9 +4,10 @@ import time
 import unicodedata
 import difflib
 from collections import defaultdict
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
+from app.services.parsers.base import BaseValidator
 
-class DocumentValidator:
+class PDFValidator(BaseValidator):
     def __init__(self, raw_elements):
         self.raw_elements = raw_elements
         self.final_chunks = []
@@ -331,3 +332,9 @@ class DocumentValidator:
         report_text = "\n".join(report_lines)
         
         return report_text, final_status, sorted(list(fallback_pages))
+        
+    def validate(self, chunks: List[Dict[str, Any]], **kwargs) -> Tuple[str, str, List[Any]]:
+        """
+        Implementation of BaseValidator interface.
+        """
+        return self.run_validation(chunks)
