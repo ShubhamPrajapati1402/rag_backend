@@ -47,7 +47,7 @@ If you did not request this code, please ignore this email.
             try:
                 message = EmailMessage()
                 from_addr = settings.EMAILS_FROM_EMAIL or settings.SMTP_USER
-                from_name = settings.EMAILS_FROM_NAME or "RAG Auth Service"
+                from_name = settings.EMAILS_FROM_NAME or "Noesis Auth"
                 message["From"] = f"{from_name} <{from_addr}>"
                 message["To"] = to_email
                 message["Subject"] = subject

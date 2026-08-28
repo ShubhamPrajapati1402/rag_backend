@@ -30,8 +30,8 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down RAG Backend...")
 
 app = FastAPI(
-    title="RAG Application API",
-    description="Production-grade Agentic RAG Backend with JWT & HttpOnly Cookie Authentication, Redis OTP Engine, and Multi-Format Ingestion",
+    title="Noesis API",
+    description="Noesis - Production-grade Agentic RAG Backend with JWT & HttpOnly Cookie Authentication, Redis OTP Engine, and Multi-Format Ingestion",
     version="1.0.0",
     lifespan=lifespan
 )
