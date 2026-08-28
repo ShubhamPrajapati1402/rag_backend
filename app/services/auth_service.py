@@ -69,9 +69,10 @@ class AuthService:
         return user
 
     @classmethod
-    def verify_signup_otp(cls, db: Session, verify_data: OTPVerifyRequest) -> Tuple[User, str]:
+    async def verify_signup_otp(cls, db: Session, verify_data: OTPVerifyRequest) -> Tuple[User, str]:
         """
-        Verifies submitted OTP code against Redis, activates user, and creates JWT session.
+        Verifies submitted OTP code against Redis, activates user, creates JWT session,
+        and sends a Welcome Email with Noesis features.
         """
         email = verify_data.email.strip().lower()
         user = cls.get_user_by_email(db, email)
@@ -88,6 +89,9 @@ class AuthService:
         user.is_verified = True
         db.commit()
         db.refresh(user)
+
+        # Send rich Welcome Email
+        await EmailService.send_welcome_email(user.email, user.full_name)
 
         # Generate JWT session token
         token = create_access_token(
@@ -172,9 +176,10 @@ class AuthService:
         return user, token
 
     @classmethod
-    def authenticate_google(cls, db: Session, id_token_str: str) -> Tuple[User, str]:
+    async def authenticate_google(cls, db: Session, id_token_str: str) -> Tuple[User, str]:
         """
         Verifies Google OAuth2 ID token, finds or creates verified user, and creates JWT session.
+        Sends a Welcome Email if this is a first-time signup.
         """
         google_payload = GoogleAuthService.verify_token(id_token_str)
         email = google_payload["email"].strip().lower()
@@ -182,11 +187,13 @@ class AuthService:
         avatar_url = google_payload.get("picture")
 
         user = cls.get_user_by_email(db, email)
+        is_new_user = False
 
         if user:
             # Link or update existing account
             if not user.is_verified:
                 user.is_verified = True
+                is_new_user = True
             if avatar_url and not user.avatar_url:
                 user.avatar_url = avatar_url
             if full_name and not user.full_name:
@@ -208,7 +215,12 @@ class AuthService:
             db.add(user)
             db.commit()
             db.refresh(user)
+            is_new_user = True
             logger.info(f"Created new verified user for {email} via Google OAuth")
+
+        # Send welcome email for newly onboarded user
+        if is_new_user:
+            await EmailService.send_welcome_email(user.email, user.full_name)
 
         if not user.is_active:
             raise HTTPException(

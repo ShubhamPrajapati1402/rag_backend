@@ -45,16 +45,16 @@ async def signup(
     status_code=status.HTTP_200_OK,
     summary="Verify 6-digit OTP code & start authenticated cookie session"
 )
-def verify_otp(
+async def verify_otp(
     verify_data: OTPVerifyRequest,
     response: Response,
     db: Session = Depends(get_db)
 ):
     """
     Validates the submitted OTP code from Redis with anti-bruteforce guards.
-    On success, activates the user, sets an HttpOnly session cookie, and returns user data.
+    On success, activates the user, dispatches a welcome email, sets an HttpOnly session cookie, and returns user data.
     """
-    user, token = AuthService.verify_signup_otp(db, verify_data)
+    user, token = await AuthService.verify_signup_otp(db, verify_data)
     set_auth_cookie(response, token)
     return TokenResponse(
         message="Email verified successfully. You are now logged in.",
@@ -110,16 +110,16 @@ async def login(
     status_code=status.HTTP_200_OK,
     summary="Sign in or Sign up using Google OAuth2 ID Token"
 )
-def google_auth(
+async def google_auth(
     google_data: GoogleAuthRequest,
     response: Response,
     db: Session = Depends(get_db)
 ):
     """
     Authenticates Google OAuth2 ID Token, automatically provisions/links user account,
-    and sets an HttpOnly session cookie.
+    sends a welcome email on new registration, and sets an HttpOnly session cookie.
     """
-    user, token = AuthService.authenticate_google(db, google_data.id_token)
+    user, token = await AuthService.authenticate_google(db, google_data.id_token)
     set_auth_cookie(response, token)
     return TokenResponse(
         message="Google authentication successful.",
