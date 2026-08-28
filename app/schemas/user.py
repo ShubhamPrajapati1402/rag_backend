@@ -1,6 +1,6 @@
 from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from typing import Any, Optional
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator
 
 class UserSignupRequest(BaseModel):
     email: EmailStr
@@ -16,7 +16,17 @@ class GoogleAuthRequest(BaseModel):
 
 class OTPVerifyRequest(BaseModel):
     email: EmailStr
-    otp_code: str = Field(..., min_length=4, max_length=8, description="OTP code received via email")
+    otp_code: str = Field(..., description="OTP code received via email")
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_otp_field(cls, values: Any) -> Any:
+        if isinstance(values, dict):
+            # Accept 'otp', 'code', or 'otp_code' from the frontend
+            code = values.get("otp_code") or values.get("otp") or values.get("code")
+            if code is not None:
+                values["otp_code"] = str(code).strip()
+        return values
 
 class OTPResendRequest(BaseModel):
     email: EmailStr
