@@ -15,11 +15,13 @@ The ingestion pipeline is designed for enterprise-level robustness, featuring:
 
 ## Tech Stack
 
-* **Web Framework:** FastAPI (Planned)
-* **Database ORM:** SQLAlchemy (with `pgvector` extension)
+* **Web Framework:** FastAPI (Running on `BACKEND_PORT` from `.env`, default: `2001`)
+* **Database ORM:** SQLAlchemy 2.0 (with `pgvector` extension)
 * **Database & Vector Store:** Supabase Cloud (PostgreSQL)
+* **Cache & OTP Store:** Redis (with TTL-based rate limiting & anti-bruteforce guards)
+* **Authentication:** JWT with HttpOnly Secure Cookies & Google OAuth2
 * **Embeddings:** Hugging Face Inference API (`BAAI/bge-m3`)
-* **Large Language Model (LLM):** Groq API (Planned)
+* **Large Language Model (LLM):** Groq API
 * **RAG Framework:** LangChain & LangGraph
 * **Document Parsing & OCR:** `unstructured`, `pdfplumber`, `markdown-it-py`, `pandas`, `python-docx`, `python-pptx`, `beautifulsoup4`
 * **Logging:** `loguru`
@@ -98,7 +100,23 @@ To activate the virtual environment on Windows, run:
      - `fast`: Fast, extracts pure text, destroys tables.
      - `hybrid`: Recommended dynamic architecture leveraging both.
 
-### 4. Running the Ingestion Pipeline
+### 4. Running the FastAPI Backend Server
+Start the backend server on the configured port (e.g. `2001`):
+```powershell
+uv run python app/main.py
+```
+Interactive Swagger API documentation will be available at `http://localhost:2001/docs`.
+
+#### Authentication API Endpoints
+* `POST /api/v1/auth/signup`: Register user with email & password (dispatches 6-digit OTP).
+* `POST /api/v1/auth/verify-otp`: Validate 6-digit OTP code, activate account, and set `HttpOnly` session cookie.
+* `POST /api/v1/auth/resend-otp`: Request fresh OTP (enforces cooldown & hourly rate limits).
+* `POST /api/v1/auth/login`: Authenticate with email & password and set `HttpOnly` session cookie.
+* `POST /api/v1/auth/google`: Sign in / sign up using Google OAuth2 ID token.
+* `GET /api/v1/auth/me`: Get current logged-in user profile (cookie authenticated).
+* `POST /api/v1/auth/logout`: Clear authentication session cookie.
+
+### 5. Running the Ingestion Pipeline
 
 To ingest a document (e.g., `.pdf`, `.md`, `.docx`, `.csv`, `.json`) into your vector database, place it in the `data/uploads/` directory and run:
 
@@ -112,3 +130,4 @@ To test a document's extraction and chunking (and for PDFs, structural correctne
 uv run python app/scripts/ingest.py --validate "data/uploads/your_file.pdf"
 ```
 This prints a highly detailed terminal benchmark displaying element extraction rates, fallback loops (if applicable), chunking behavior, and speed metrics.
+
