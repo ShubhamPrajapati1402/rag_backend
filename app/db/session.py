@@ -2,15 +2,22 @@ from loguru import logger
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
-from app.models.document import Base
+from app.models import Base, User, Document, DocumentChunk
 
 # SQLAlchemy 2.0 requires "postgresql://" instead of "postgres://"
 db_url = settings.DATABASE_URL
 if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 
-# Set up the SQLAlchemy engine. pool_pre_ping=True checks if the connection is still alive before using it.
-engine = create_engine(db_url, pool_pre_ping=True)
+# Set up the SQLAlchemy engine with optimized connection pooling
+engine = create_engine(
+    db_url,
+    pool_size=10,
+    max_overflow=20,
+    pool_recycle=300,
+    pool_timeout=10,
+    connect_args={"connect_timeout": 5}
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():

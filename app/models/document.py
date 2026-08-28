@@ -21,6 +21,7 @@ class Document(Base):
     __tablename__ = "documents"
     
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     filename = Column(String, nullable=False)
     file_hash = Column(String, unique=True, index=True, nullable=False)
     config_hash = Column(String, nullable=False)
