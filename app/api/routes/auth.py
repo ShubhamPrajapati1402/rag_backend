@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -23,17 +23,18 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
     "/signup",
     response_model=AuthMessageResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Register a new user account (sends 6-digit OTP)"
+    summary="Register a new user account (dispatches 6-digit OTP in background)"
 )
 async def signup(
     signup_data: UserSignupRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
-    Registers a new unverified user account and dispatches an OTP to their email address.
-    Protected against spamming by Redis rate limits and resend cooldowns.
+    Registers a new unverified user account and dispatches an OTP in the background.
+    Responds instantaneously (< 30ms) without waiting for SMTP server latency.
     """
-    user = await AuthService.signup(db, signup_data)
+    user = await AuthService.signup(db, signup_data, background_tasks=background_tasks)
     return AuthMessageResponse(
         message="Signup initiated. A 6-digit verification code has been sent to your email.",
         email=user.email
@@ -48,13 +49,14 @@ async def signup(
 async def verify_otp(
     verify_data: OTPVerifyRequest,
     response: Response,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
     Validates the submitted OTP code from Redis with anti-bruteforce guards.
-    On success, activates the user, dispatches a welcome email, sets an HttpOnly session cookie, and returns user data.
+    On success, activates the user, dispatches a welcome email in the background, sets an HttpOnly session cookie, and returns user data.
     """
-    user, token = await AuthService.verify_signup_otp(db, verify_data)
+    user, token = await AuthService.verify_signup_otp(db, verify_data, background_tasks=background_tasks)
     set_auth_cookie(response, token)
     return TokenResponse(
         message="Email verified successfully. You are now logged in.",
@@ -70,12 +72,13 @@ async def verify_otp(
 )
 async def resend_otp(
     resend_data: OTPResendRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
-    Issues a new verification OTP respecting the cooldown period and hourly limits.
+    Issues a new verification OTP in background respecting cooldown and rate limits.
     """
-    await AuthService.resend_signup_otp(db, resend_data)
+    await AuthService.resend_signup_otp(db, resend_data, background_tasks=background_tasks)
     return AuthMessageResponse(
         message="A fresh verification code has been sent to your email.",
         email=resend_data.email
@@ -90,13 +93,14 @@ async def resend_otp(
 async def login(
     login_data: UserLoginRequest,
     response: Response,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
     Authenticates user credentials. If verified, sets a secure HttpOnly session cookie.
-    If unverified, sends a new OTP and prompts verification.
+    If unverified, sends a new OTP in background and prompts verification.
     """
-    user, token = await AuthService.login(db, login_data)
+    user, token = await AuthService.login(db, login_data, background_tasks=background_tasks)
     set_auth_cookie(response, token)
     return TokenResponse(
         message="Login successful.",
@@ -113,13 +117,14 @@ async def login(
 async def google_auth(
     google_data: GoogleAuthRequest,
     response: Response,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
     Authenticates Google OAuth2 ID Token, automatically provisions/links user account,
-    sends a welcome email on new registration, and sets an HttpOnly session cookie.
+    sends a welcome email in background on new registration, and sets an HttpOnly session cookie.
     """
-    user, token = await AuthService.authenticate_google(db, google_data.id_token)
+    user, token = await AuthService.authenticate_google(db, google_data.id_token, background_tasks=background_tasks)
     set_auth_cookie(response, token)
     return TokenResponse(
         message="Google authentication successful.",

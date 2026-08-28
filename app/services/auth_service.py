@@ -1,7 +1,7 @@
 from typing import Optional, Tuple
 from loguru import logger
 from sqlalchemy.orm import Session
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, BackgroundTasks
 
 from app.models.user import User
 from app.schemas.user import UserSignupRequest, UserLoginRequest, OTPVerifyRequest, OTPResendRequest
@@ -20,9 +20,14 @@ class AuthService:
         return db.query(User).filter(User.id == user_id).first()
 
     @classmethod
-    async def signup(cls, db: Session, signup_data: UserSignupRequest) -> User:
+    async def signup(
+        cls,
+        db: Session,
+        signup_data: UserSignupRequest,
+        background_tasks: Optional[BackgroundTasks] = None
+    ) -> User:
         """
-        Handles initial registration by saving unverified user and sending a Redis-backed OTP.
+        Handles initial registration by saving unverified user and sending a Redis-backed OTP asynchronously.
         """
         email = signup_data.email.strip().lower()
         existing_user = cls.get_user_by_email(db, email)
@@ -61,18 +66,28 @@ class AuthService:
             db.refresh(user)
             logger.info(f"Created new unverified account for {email}")
 
-        # Generate, store in Redis, and dispatch OTP
+        # Generate and store OTP in Redis
         otp_code = OTPService.generate_otp_code()
         OTPService.store_otp(email, otp_code, purpose="signup")
-        await EmailService.send_otp_email(email, otp_code, user.full_name)
+
+        # Dispatch email non-blockingly in background
+        if background_tasks:
+            background_tasks.add_task(EmailService.send_otp_email, email, otp_code, user.full_name)
+        else:
+            await EmailService.send_otp_email(email, otp_code, user.full_name)
 
         return user
 
     @classmethod
-    async def verify_signup_otp(cls, db: Session, verify_data: OTPVerifyRequest) -> Tuple[User, str]:
+    async def verify_signup_otp(
+        cls,
+        db: Session,
+        verify_data: OTPVerifyRequest,
+        background_tasks: Optional[BackgroundTasks] = None
+    ) -> Tuple[User, str]:
         """
         Verifies submitted OTP code against Redis, activates user, creates JWT session,
-        and sends a Welcome Email with Noesis features.
+        and sends a Welcome Email non-blockingly in background.
         """
         email = verify_data.email.strip().lower()
         user = cls.get_user_by_email(db, email)
@@ -90,8 +105,11 @@ class AuthService:
         db.commit()
         db.refresh(user)
 
-        # Send rich Welcome Email
-        await EmailService.send_welcome_email(user.email, user.full_name)
+        # Send rich Welcome Email in background
+        if background_tasks:
+            background_tasks.add_task(EmailService.send_welcome_email, user.email, user.full_name)
+        else:
+            await EmailService.send_welcome_email(user.email, user.full_name)
 
         # Generate JWT session token
         token = create_access_token(
@@ -103,7 +121,12 @@ class AuthService:
         return user, token
 
     @classmethod
-    async def resend_signup_otp(cls, db: Session, resend_data: OTPResendRequest) -> None:
+    async def resend_signup_otp(
+        cls,
+        db: Session,
+        resend_data: OTPResendRequest,
+        background_tasks: Optional[BackgroundTasks] = None
+    ) -> None:
         """
         Resends an OTP to an unverified user respecting cooldowns and rate limits.
         """
@@ -124,15 +147,24 @@ class AuthService:
         # Enforce rate limits
         OTPService.check_request_rate_limit(email, purpose="signup")
 
-        # Generate, store in Redis, and dispatch OTP
+        # Generate, store in Redis, and dispatch OTP in background
         otp_code = OTPService.generate_otp_code()
         OTPService.store_otp(email, otp_code, purpose="signup")
-        await EmailService.send_otp_email(email, otp_code, user.full_name)
+        
+        if background_tasks:
+            background_tasks.add_task(EmailService.send_otp_email, email, otp_code, user.full_name)
+        else:
+            await EmailService.send_otp_email(email, otp_code, user.full_name)
 
         logger.info(f"Resent OTP to {email}")
 
     @classmethod
-    async def login(cls, db: Session, login_data: UserLoginRequest) -> Tuple[User, str]:
+    async def login(
+        cls,
+        db: Session,
+        login_data: UserLoginRequest,
+        background_tasks: Optional[BackgroundTasks] = None
+    ) -> Tuple[User, str]:
         """
         Authenticates user credentials and checks active/verified status.
         """
@@ -158,7 +190,10 @@ class AuthService:
                 OTPService.check_request_rate_limit(email, purpose="signup")
                 otp_code = OTPService.generate_otp_code()
                 OTPService.store_otp(email, otp_code, purpose="signup")
-                await EmailService.send_otp_email(email, otp_code, user.full_name)
+                if background_tasks:
+                    background_tasks.add_task(EmailService.send_otp_email, email, otp_code, user.full_name)
+                else:
+                    await EmailService.send_otp_email(email, otp_code, user.full_name)
             except Exception:
                 pass  # Cooldown might be active
 
@@ -176,7 +211,12 @@ class AuthService:
         return user, token
 
     @classmethod
-    async def authenticate_google(cls, db: Session, id_token_str: str) -> Tuple[User, str]:
+    async def authenticate_google(
+        cls,
+        db: Session,
+        id_token_str: str,
+        background_tasks: Optional[BackgroundTasks] = None
+    ) -> Tuple[User, str]:
         """
         Verifies Google OAuth2 ID token, finds or creates verified user, and creates JWT session.
         Sends a Welcome Email if this is a first-time signup.
@@ -220,7 +260,10 @@ class AuthService:
 
         # Send welcome email for newly onboarded user
         if is_new_user:
-            await EmailService.send_welcome_email(user.email, user.full_name)
+            if background_tasks:
+                background_tasks.add_task(EmailService.send_welcome_email, user.email, user.full_name)
+            else:
+                await EmailService.send_welcome_email(user.email, user.full_name)
 
         if not user.is_active:
             raise HTTPException(
