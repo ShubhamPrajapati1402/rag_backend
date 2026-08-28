@@ -11,7 +11,8 @@ class EmailService:
         Sends OTP verification email via SMTP if configured, or outputs clearly to the logger in development.
         """
         subject = f"Your Verification Code - {otp_code}"
-        name_greeting = f"Hello {full_name}," if full_name else "Hello,"
+        display_name = full_name or to_email.split("@")[0]
+        name_greeting = f"Hello {display_name},"
         
         body_text = f"""{name_greeting}
 
@@ -77,7 +78,8 @@ If you did not request this code, please ignore this email.
         Sends a rich Welcome Email introducing Noesis and its key platform capabilities.
         """
         subject = "Welcome to Noesis - Supercharge Your Knowledge with Agentic RAG"
-        name_greeting = f"Hi {full_name}," if full_name else "Hi there,"
+        display_name = full_name or to_email.split("@")[0]
+        name_greeting = f"Hi {display_name},"
         dashboard_url = settings.FRONTEND_URL
 
         body_text = f"""{name_greeting}
