@@ -234,13 +234,17 @@ class AuthService:
             if not user.is_verified:
                 user.is_verified = True
                 is_new_user = True
-            if avatar_url and not user.avatar_url:
+            # Always sync Google profile image, full name, and provider
+            if avatar_url:
                 user.avatar_url = avatar_url
-            if full_name and not user.full_name:
+            if full_name:
                 user.full_name = full_name
+            user.auth_provider = "google"
+            
+            # Keep user.hashed_password completely intact so the user can login with either method!
             db.commit()
             db.refresh(user)
-            logger.info(f"Existing user {email} authenticated via Google OAuth")
+            logger.info(f"Existing user {email} synced profile, updated auth_provider to google, and authenticated via Google OAuth")
         else:
             # Create new user pre-verified via Google
             user = User(

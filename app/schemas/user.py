@@ -32,6 +32,20 @@ class UserLoginRequest(BaseModel):
 class GoogleAuthRequest(BaseModel):
     id_token: str = Field(..., description="Google OAuth2 ID Token returned by Google Identity Services")
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_token_field(cls, values: Any) -> Any:
+        if isinstance(values, dict):
+            token = (
+                values.get("id_token")
+                or values.get("token")
+                or values.get("credential")
+                or values.get("idToken")
+            )
+            if token:
+                values["id_token"] = str(token).strip()
+        return values
+
 class OTPVerifyRequest(BaseModel):
     email: EmailStr
     otp_code: str = Field(..., description="OTP code received via email")
