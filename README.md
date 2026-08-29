@@ -28,13 +28,16 @@ flowchart TB
         EmailService["Async SMTP / Dev Logger"]
     end
 
-    subgraph AgenticRAG ["Stateful LangGraph RAG Core"]
+    subgraph AgenticRAG ["Stateful LangGraph RAG Core (8-Node Pipeline)"]
         Summarizer["Node 1: Progressive Summarizer"]
-        Router["Node 2: Semantic Router"]
-        Rewriter["Node 3: Contextual Query Rewriter"]
-        Retriever["Node 4: pgvector Cosine Retriever"]
-        Grader["Node 5: Parallel Doc Grader (asyncio.gather)"]
-        Generator["Node 6: Grounded Generator & Citations"]
+        InputGuard["Node 2: Security & Prompt Injection Guardrail"]
+        Router["Node 3: Semantic Router"]
+        Rewriter["Node 4: Contextual Query Rewriter"]
+        Retriever["Node 5: Stage 1 High-Recall pgvector Retriever (top_k=20)"]
+        Reranker["Node 6: Stage 2 Cross-Encoder Reranker (BAAI/bge-reranker-v2-m3)"]
+        Grader["Node 7: Parallel Document Grader (asyncio.gather)"]
+        Generator["Node 8: Grounded Generator & Citations"]
+        HallucinationGuard["Node 9: Groundedness Audit Guardrail"]
     end
 
     subgraph IngestionPipeline ["Data Ingestion & Vector Engine"]
@@ -93,16 +96,19 @@ flowchart TB
 
 ---
 
-### 3. Stateful LangGraph RAG Agent & Live Thought Tracing
-* **6-Node Reasoning Graph**:
+### 3. Stateful LangGraph RAG Agent & Two-Stage Retrieval
+* **8-Node Stateful LangGraph Workflow**:
   1. **Summarizer Node**: Progressively condenses multi-turn conversations into a running cumulative summary when history $\ge 4$ messages so zero long-range context is truncated.
-  2. **Router Node**: Classifies queries into direct conversational answers vs. vector database retrieval.
-  3. **Query Rewriter Node**: Resolves conversational pronouns and context across prior turns into standalone search queries.
-  4. **Vector Retriever Node**: Cosine distance similarity search over PostgreSQL `document_chunks` using `BAAI/bge-m3` 1024-dimensional embeddings.
-  5. **Document Grader Node**: Evaluates candidate chunks concurrently with Groq LLM (`asyncio.gather`) to filter out noise before generation in ~200ms.
-  6. **Grounded Generator & Guard**: Synthesizes answers strictly from verified context and formats source citations.
+  2. **Input Guardrail Node**: Real-time evaluation against prompt injection signatures, DAN bypasses, and adversarial overrides before routing.
+  3. **Router Node**: High-precision classification directing factual/document inquiries to vector retrieval vs. small-talk pleasantries to direct conversation.
+  4. **Query Rewriter Node**: Resolves conversational pronouns and context across prior turns into compact, high-signal standalone search queries.
+  5. **Stage 1 Vector Retriever Node**: Wide-pool candidate search (`top_k = 20`) over PostgreSQL `document_chunks` using `BAAI/bge-m3` 1024-dimensional embeddings.
+  6. **Stage 2 Cross-Encoder Reranker Node**: Deep cross-attention relevance scoring via **`BAAI/bge-reranker-v2-m3`** (with fast Groq listwise fallback) to isolate the top 5 highest-precision chunks.
+  7. **Document Grader Node**: Evaluates candidate chunks concurrently with Groq LLM (`asyncio.gather`) to filter out noise before generation.
+  8. **Grounded Generator & Dynamic Fallback**: Synthesizes structured markdown tables and executive summaries strictly from verified context, or triggers dynamic context-aware refusals if no matching documents exist.
+  9. **Hallucination Guardrail Node**: Post-generation verification auditing every claim and numerical figure against full chunk text to guarantee $100\%$ factual fidelity.
 * **Server-Sent Events (SSE) Streaming (`POST /api/v1/chat/stream`)**:
-  * **Live Thought Tracing (`event: trace`)**: Streams active reasoning thoughts (e.g. *"Analyzing question intent..."*, *"Searching vector database for high-similarity document excerpts..."*, *"Verified 3 relevant excerpts (Confidence: 85%)"*).
+  * **Live Thought Tracing (`event: trace`)**: Streams active reasoning thoughts (e.g. *"Searching vector database for high-similarity document excerpts..."*, *"Cross-encoder reranking candidate excerpts..."*, *"Verified 5 relevant excerpts (Score: 100%)"*).
   * **Real-time LLM Tokens (`event: token`)**: Sub-second token delivery directly to the client from generator nodes.
   * **Structured Source Citations (`event: citations`)**: Returns verified file names, page numbers, and text previews.
 * **Intelligent Semantic Titling**: Generates concise 3-to-6 word titles for conversations using the LLM without hard character slicing.
@@ -122,6 +128,7 @@ flowchart TB
 | **Cache & OTP Engine** | Redis 5.0+ |
 | **Security & Auth** | PyJWT, bcrypt, Google Auth, HttpOnly Cookies |
 | **Embeddings Model** | Hugging Face Inference API (`BAAI/bge-m3` 1024-dim) |
+| **Reranker Engine** | `BAAI/bge-reranker-v2-m3` + Groq Flash Listwise Fallback |
 | **LLM Inference** | Groq API (`llama-3.3-70b-versatile` / `gpt-oss-20b`, `temp=0.2`) |
 | **Document Parsers** | `unstructured`, `pdfplumber`, `markdown-it-py`, `pandas`, `python-docx`, `python-pptx`, `beautifulsoup4` |
 | **Testing** | `pytest`, `httpx`, `fakeredis`, `anyio` |
