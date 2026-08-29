@@ -2,7 +2,7 @@ from loguru import logger
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
-from app.models import Base, User, Document, DocumentChunk
+from app.models import Base, User, Document, DocumentChunk, ChatSession, ChatMessage
 
 # SQLAlchemy 2.0 requires "postgresql://" instead of "postgres://"
 db_url = settings.DATABASE_URL

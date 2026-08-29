@@ -14,7 +14,8 @@ flowchart TB
 
     subgraph APILayer ["FastAPI Gateway (Port :2001)"]
         CORSMiddleware["CORS (Credentials Allowed)"]
-        AuthRouter["/api/v1/auth (Router)"]
+        AuthRouter["/api/v1/auth (Authentication)"]
+        ChatRouter["/api/v1/chat (Stateful LangGraph RAG)"]
         IngestRouter["/api/v1/ingest (Ingestion Engine)"]
         HealthRouter["/health (Healthcheck)"]
     end
@@ -42,6 +43,7 @@ flowchart TB
 
     Frontend --> CORSMiddleware
     CORSMiddleware --> AuthRouter
+    CORSMiddleware --> ChatRouter
     CORSMiddleware --> IngestRouter
     CORSMiddleware --> HealthRouter
 
@@ -68,18 +70,24 @@ flowchart TB
 * **Google OAuth2 Authentication**: Decoupled verification of Google ID tokens using official Google public certificates, with automated account provisioning and profile synchronization.
 * **User-Scoped Data Storage**: SQLAlchemy `User` model with relational binding to `Document` records (`user_id` foreign key).
 
-### 2. Multi-Format Data Ingestion Pipeline
-* **10+ Supported Formats**: Native parsing for PDF, Markdown, DOCX, CSV, TSV, Excel (`.xlsx`, `.xls`), HTML, JSON, PPTX, XML, and TXT.
-* **Hybrid PDF Parsing**:
-  * Scans pages with `pdfplumber` in milliseconds to detect tables or scanned images.
-  * Dynamically routes complex pages to `hi_res` OCR and plain text pages to `fast` extractors.
-  * Slices, processes, and merges single-page documents back in order with zero layout loss.
-* **Semantic & Format-Specific Chunking**:
-  * Markdown: Headings path preservation (`# H1 > ## H2`).
-  * Excel: Sheets isolated with 100% boundary isolation.
-  * PPTX: Slide boundary preservation (1 Slide = 1 Chunk).
-* **Data Integrity Firewall**: Format-specific validators inspect chunk continuity, table preservation, and automatic fallback re-parsing.
-* **Idempotency & Atomic Leasing**: SHA-256 hash matching prevents duplicate embeddings, while time-bound locks avoid concurrent worker collisions.
+### 2. Multi-Format Data Ingestion Engine
+* **10+ Supported Formats**: Native parsing for PDF, Markdown, DOCX, CSV, TSV, Excel (`.xlsx`, `.xls`), HTML, JSON, PPTX, XML, and TXT via `ParserRegistry`.
+* **Hybrid PDF Parsing**: Scans pages with `pdfplumber` to route complex tables to `hi_res` OCR and simple pages to `fast` extraction.
+* **Semantic & Format-Specific Chunking**: Strict sheet boundary isolation for Excel, heading breadcrumb hierarchies (`# H1 > ## H2`) for Markdown/DOCX, and slide-level isolation for PPTX.
+* **Idempotency & Resumability**: SHA-256 file hashing, config hash drift protection, and atomic document leases.
+
+### 3. Stateful LangGraph RAG Agent & SSE Streaming
+* **6-Node Reasoning Graph**:
+  1. **Summarizer Node**: Progressively condenses multi-turn conversations so zero long-range context is truncated.
+  2. **Router Node**: Classifies queries into direct conversational answers vs. vector database retrieval.
+  3. **Query Rewriter Node**: Resolves conversational pronouns and context into standalone search queries.
+  4. **Vector Retriever Node**: Cosine distance similarity search over PostgreSQL `document_chunks` using `BAAI/bge-m3` embeddings.
+  5. **Document Grader Node**: Evaluates candidate chunks with Groq LLM to filter out noise before generation.
+  6. **Grounded Generator & Guard**: Synthesizes answers strictly from verified context and formats source citations.
+* **Server-Sent Events (SSE) Streaming (`POST /api/v1/chat/stream`)**:
+  * Emits live metadata, node status updates (`metadata`, `node_status`), real-time streaming LLM tokens (`token`), source citations (`citations`), and completion confirmation (`done`).
+* **Intelligent Semantic Titling**: Generates concise 3-to-6 word titles for conversations using the LLM without hard character slicing.
+* **Persistent PostgreSQL Conversation Store**: `chat_sessions` and `chat_messages` tables store full message histories, citations, and routing paths scoped to `user_id`.
 
 ---
 
