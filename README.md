@@ -70,22 +70,25 @@ flowchart TB
 * **Google OAuth2 Authentication**: Decoupled verification of Google ID tokens using official Google public certificates, with automated account provisioning and profile synchronization.
 * **User-Scoped Data Storage**: SQLAlchemy `User` model with relational binding to `Document` records (`user_id` foreign key).
 
-### 2. Multi-Format Data Ingestion Engine
+### 2. Multi-Format Data Ingestion Engine & Live Progress Stream
 * **10+ Supported Formats**: Native parsing for PDF, Markdown, DOCX, CSV, TSV, Excel (`.xlsx`, `.xls`), HTML, JSON, PPTX, XML, and TXT via `ParserRegistry`.
+* **Dynamic Layman SSE Stream (`POST /api/v1/ingest/stream`)**: Calculates and streams dynamic, genuine progress based on page counts and embedding batches in friendly layman terms (e.g. *"Teaching AI concepts (16 of 42 sections learned)..."*).
 * **Hybrid PDF Parsing**: Scans pages with `pdfplumber` to route complex tables to `hi_res` OCR and simple pages to `fast` extraction.
 * **Semantic & Format-Specific Chunking**: Strict sheet boundary isolation for Excel, heading breadcrumb hierarchies (`# H1 > ## H2`) for Markdown/DOCX, and slide-level isolation for PPTX.
 * **Idempotency & Resumability**: SHA-256 file hashing, config hash drift protection, and atomic document leases.
 
-### 3. Stateful LangGraph RAG Agent & SSE Streaming
+### 3. Stateful LangGraph RAG Agent & Live Thought Tracing
 * **6-Node Reasoning Graph**:
   1. **Summarizer Node**: Progressively condenses multi-turn conversations so zero long-range context is truncated.
   2. **Router Node**: Classifies queries into direct conversational answers vs. vector database retrieval.
   3. **Query Rewriter Node**: Resolves conversational pronouns and context into standalone search queries.
   4. **Vector Retriever Node**: Cosine distance similarity search over PostgreSQL `document_chunks` using `BAAI/bge-m3` embeddings.
-  5. **Document Grader Node**: Evaluates candidate chunks with Groq LLM to filter out noise before generation.
+  5. **Document Grader Node**: Evaluates candidate chunks concurrently with Groq LLM (`asyncio.gather`) to filter out noise before generation.
   6. **Grounded Generator & Guard**: Synthesizes answers strictly from verified context and formats source citations.
 * **Server-Sent Events (SSE) Streaming (`POST /api/v1/chat/stream`)**:
-  * Emits live metadata, node status updates (`metadata`, `node_status`), real-time streaming LLM tokens (`token`), source citations (`citations`), and completion confirmation (`done`).
+  * **Live Thought Tracing (`event: trace`)**: Streams active reasoning thoughts (e.g. *"Analyzing question intent..."*, *"Searching vector database for high-similarity document excerpts..."*, *"Verified 3 relevant excerpts (Confidence: 85%)"*).
+  * **Real-time LLM Tokens (`event: token`)**: Sub-second token delivery directly to the client.
+  * **Structured Source Citations (`event: citations`)**: Returns verified file names, page numbers, and text previews.
 * **Intelligent Semantic Titling**: Generates concise 3-to-6 word titles for conversations using the LLM without hard character slicing.
 * **Persistent PostgreSQL Conversation Store**: `chat_sessions` and `chat_messages` tables store full message histories, citations, and routing paths scoped to `user_id`.
 
