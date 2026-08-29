@@ -26,7 +26,7 @@ def _clean_title(raw_title: str, question: str) -> str:
     if title and len(title) > 2:
         return title
     words = question.strip().split()
-    return " ".join(words[:6]) if words else "New Conversation"
+    return " ".join(words[:10]) if words else "New Conversation"
 
 async def agenerate_chat_title(question: str, response: str) -> str:
     """
