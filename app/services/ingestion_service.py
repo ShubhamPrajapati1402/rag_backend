@@ -75,7 +75,8 @@ async def stream_dynamic_ingestion(
                     filename=filename,
                     file_hash=sha256_hash,
                     config_hash=config_hash,
-                    status=DocumentStatus.PROCESSING
+                    status=DocumentStatus.PROCESSING,
+                    file_path=temp_file_path
                 )
                 db.add(doc)
             else:
