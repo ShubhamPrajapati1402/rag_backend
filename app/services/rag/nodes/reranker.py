@@ -24,9 +24,10 @@ Respond with ONLY a JSON object formatted as:
 
 async def rerank_with_hf(query: str, documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Calls Hugging Face Inference API for BAAI/bge-reranker-v2-m3 cross-encoder scoring.
+    Calls Hugging Face Inference API for cross-encoder scoring dynamically.
     """
-    api_url = "https://api-inference.huggingface.co/models/BAAI/bge-reranker-v2-m3"
+    model_name = settings.HUGGINGFACE_RERANKER_MODEL
+    api_url = f"https://api-inference.huggingface.co/models/{model_name}"
     headers = {"Authorization": f"Bearer {settings.HUGGINGFACE_API_KEY}"}
     
     # Pair query with each chunk's text content (truncated to 1000 chars for API performance)
@@ -128,7 +129,7 @@ async def reranker_node(state: RAGState) -> dict:
     logger.info(f"[RerankerNode] Cross-Encoder Reranking {len(documents)} candidate chunks for query: '{query[:60]}...'")
 
     reranked_docs: List[Dict[str, Any]] = []
-    engine_used = "BAAI/bge-reranker-v2-m3"
+    engine_used = settings.HUGGINGFACE_RERANKER_MODEL
 
     try:
         reranked_docs = await rerank_with_hf(query, documents)
