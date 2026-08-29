@@ -9,8 +9,16 @@ from app.services.rag.nodes import (
     grader_node,
     rag_generator_node,
     direct_generator_node,
-    fallback_generator_node
+    fallback_generator_node,
+    input_guardrail_node,
+    hallucination_guard_node
 )
+
+def decide_input_guardrail(state: RAGState) -> Literal["router", "__end__"]:
+    """Decides whether the user input passes security guardrails."""
+    if state.get("route") == "blocked":
+        return "__end__"
+    return "router"
 
 def decide_route(state: RAGState) -> Literal["direct_generator", "rewriter"]:
     """Decides whether to answer directly or retrieve document context."""
@@ -27,25 +35,37 @@ def decide_generation(state: RAGState) -> Literal["rag_generator", "fallback_gen
 
 def build_rag_graph():
     """
-    Constructs and compiles the Stateful LangGraph RAG workflow with progressive summarization.
+    Constructs and compiles the Stateful LangGraph RAG workflow with multi-layer Guardrails.
     """
     workflow = StateGraph(RAGState)
 
-    # 1. Register Nodes
+    # 1. Register Core & Guardrail Nodes
     workflow.add_node("summarizer", summarizer_node)
+    workflow.add_node("input_guardrail", input_guardrail_node)
     workflow.add_node("router", router_node)
     workflow.add_node("rewriter", rewriter_node)
     workflow.add_node("retriever", retriever_node)
     workflow.add_node("grader", grader_node)
     workflow.add_node("rag_generator", rag_generator_node)
+    workflow.add_node("hallucination_guard", hallucination_guard_node)
     workflow.add_node("direct_generator", direct_generator_node)
     workflow.add_node("fallback_generator", fallback_generator_node)
 
-    # 2. Set Entry Point (Summarizer maintains long-term conversation context)
+    # 2. Set Entry Point: Summarizer -> Input Guardrail
     workflow.set_entry_point("summarizer")
-    workflow.add_edge("summarizer", "router")
+    workflow.add_edge("summarizer", "input_guardrail")
 
-    # 3. Add Conditional Routing Edges
+    # 3. Input Guardrail Conditional Edge
+    workflow.add_conditional_edges(
+        "input_guardrail",
+        decide_input_guardrail,
+        {
+            "router": "router",
+            "__end__": END
+        }
+    )
+
+    # 4. Router Conditional Routing Edges
     workflow.add_conditional_edges(
         "router",
         decide_route,
@@ -55,11 +75,11 @@ def build_rag_graph():
         }
     )
 
-    # 4. Standard Retrieval Pipeline Edges
+    # 5. Standard Retrieval Pipeline Edges
     workflow.add_edge("rewriter", "retriever")
     workflow.add_edge("retriever", "grader")
 
-    # 5. Add Post-Grading Conditional Edge
+    # 6. Post-Grading Conditional Edge
     workflow.add_conditional_edges(
         "grader",
         decide_generation,
@@ -69,8 +89,11 @@ def build_rag_graph():
         }
     )
 
-    # 6. Terminal Edges
-    workflow.add_edge("rag_generator", END)
+    # 7. Post-Generation Hallucination Guardrail Edge
+    workflow.add_edge("rag_generator", "hallucination_guard")
+
+    # 8. Terminal Edges
+    workflow.add_edge("hallucination_guard", END)
     workflow.add_edge("direct_generator", END)
     workflow.add_edge("fallback_generator", END)
 

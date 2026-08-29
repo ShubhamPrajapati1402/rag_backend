@@ -25,7 +25,8 @@ async def grade_single_doc(llm, query: str, doc: Dict[str, Any], idx: int) -> tu
         else:
             is_relevant = "true" in content.lower()
 
-        logger.info(f"[GraderNode] Chunk #{idx+1} ({doc['filename']}) -> {'RELEVANT' if is_relevant else 'IRRELEVANT'}")
+        status_tag = "✅ RELEVANT" if is_relevant else "❌ FILTERED OUT"
+        logger.info(f"[GraderNode] Chunk #{idx+1} [ID: {doc.get('chunk_id')}, Page: {doc.get('page_number')}, File: {doc.get('filename')}] -> {status_tag}")
         return doc, is_relevant
     except Exception as e:
         logger.warning(f"[GraderNode] Grading error for chunk #{idx+1}: {e}. Retaining chunk safely.")

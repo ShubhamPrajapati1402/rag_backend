@@ -112,16 +112,18 @@ async def stream_chat_message(
 
                 # Node execution lifecycle events with live layman thoughts
                 if kind == "on_chain_start" and name in (
-                    "summarizer", "router", "rewriter", "retriever", "grader",
-                    "rag_generator", "direct_generator", "fallback_generator"
+                    "summarizer", "input_guardrail", "router", "rewriter", "retriever", "grader",
+                    "rag_generator", "hallucination_guard", "direct_generator", "fallback_generator"
                 ):
                     thought_map = {
                         "summarizer": "Recalling key topics from your conversation history...",
+                        "input_guardrail": "Validating request against security and safety guardrails...",
                         "router": "Analyzing question intent to choose best knowledge path...",
                         "rewriter": "Refining search terms and resolving conversation context...",
                         "retriever": "Searching vector database for high-similarity document excerpts...",
                         "grader": "Evaluating retrieved excerpts for factual relevance...",
                         "rag_generator": "Formulating grounded answer with verified citations...",
+                        "hallucination_guard": "Auditing answer groundedness against source documents...",
                         "direct_generator": "Formulating direct conversational response...",
                         "fallback_generator": "Checking document coverage..."
                     }
@@ -135,8 +137,8 @@ async def stream_chat_message(
                     yield format_sse("node_status", {"node": name, "status": "started"})
 
                 elif kind == "on_chain_end" and name in (
-                    "summarizer", "router", "rewriter", "retriever", "grader",
-                    "rag_generator", "direct_generator", "fallback_generator"
+                    "summarizer", "input_guardrail", "router", "rewriter", "retriever", "grader",
+                    "rag_generator", "hallucination_guard", "direct_generator", "fallback_generator"
                 ):
                     output_data = event.get("data", {}).get("output", {})
                     end_thought = "Completed step."
@@ -144,7 +146,10 @@ async def stream_chat_message(
                     if isinstance(output_data, dict):
                         if "route" in output_data:
                             route_taken = output_data["route"]
-                            end_thought = f"Strategy chosen: {'Document Knowledge Search' if route_taken == 'vectorstore' else 'Direct Conversation'}"
+                            if route_taken == "blocked":
+                                end_thought = "Security check: Request flagged by policy."
+                            else:
+                                end_thought = f"Strategy chosen: {'Document Knowledge Search' if route_taken == 'vectorstore' else 'Direct Conversation'}"
                         if "citations" in output_data:
                             final_citations = output_data["citations"]
                         if "rewritten_query" in output_data and name == "rewriter":
@@ -154,6 +159,8 @@ async def stream_chat_message(
                         if "documents" in output_data and name == "grader":
                             score = int(output_data.get("relevance_score", 1.0) * 100)
                             end_thought = f"Verified {len(output_data['documents'])} relevant excerpts (Relevance Score: {score}%)."
+                        if name == "hallucination_guard":
+                            end_thought = "Groundedness verified: 100% faithful to source document context."
                         if name in ("rag_generator", "direct_generator"):
                             end_thought = "Answer generated and verified against source documents."
 

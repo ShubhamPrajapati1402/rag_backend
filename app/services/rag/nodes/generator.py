@@ -15,7 +15,19 @@ async def rag_generator_node(state: RAGState) -> dict:
     question = state.get("question", "")
     documents = state.get("documents", [])
 
-    logger.info(f"[RAGGeneratorNode] Generating grounded response using {len(documents)} context chunks...")
+    logger.info(f"╔══════════════════════════════════════════════════════════════════════════════════════════")
+    logger.info(f"║ [RAGGeneratorNode] SELECTED CHUNKS FOR ANSWER GENERATION ({len(documents)} Chunks Total):")
+    for i, doc in enumerate(documents):
+        fn = doc.get("filename", "Unknown Document")
+        pg = doc.get("page_number") or "N/A"
+        sheet = doc.get("sheet_name") or "N/A"
+        chunk_idx = doc.get("chunk_index", i)
+        sim = doc.get("similarity_score", "N/A")
+        chunk_id = doc.get("chunk_id", "N/A")
+        preview = doc.get("text_content", "")[:130].replace("\n", " ").strip()
+        logger.info(f"║ 📄 Chunk [{i+1}] | ChunkID: {chunk_id} | File: {fn} | Page: {pg} | Similarity: {sim}")
+        logger.info(f"║    Excerpt: \"{preview}...\"")
+    logger.info(f"╚══════════════════════════════════════════════════════════════════════════════════════════")
 
     context_blocks = []
     citations: List[Dict[str, Any]] = []
@@ -85,17 +97,23 @@ async def direct_generator_node(state: RAGState) -> dict:
     return {"generation": response.content.strip(), "citations": []}
 
 
+from app.services.rag.prompts import (
+    GENERATOR_SYSTEM_PROMPT,
+    DIRECT_GENERATOR_SYSTEM_PROMPT,
+    FALLBACK_REFUSAL_SYSTEM_PROMPT
+)
+
 async def fallback_generator_node(state: RAGState) -> dict:
     """
-    Produces a transparent, grounded reply when no relevant chunks are found in the documents.
+    Produces a dynamic, context-aware polite refusal when no relevant chunks are found in the documents.
     """
     question = state.get("question", "")
-    logger.info(f"[FallbackGeneratorNode] No relevant documents found for query.")
+    logger.info(f"[FallbackGeneratorNode] Generating dynamic polite refusal for query: '{question}'...")
 
-    message = (
-        f"Based on the uploaded documents in your workspace, I could not find information regarding "
-        f"**\"{question}\"**.\n\n"
-        f"Please verify that the relevant document (PDF, spreadsheet, DOCX, etc.) has been uploaded and ingested, "
-        f"or try rephrasing your inquiry with specific terms."
-    )
-    return {"generation": message, "citations": []}
+    llm = get_groq_llm(temperature=0.2)
+    response = await llm.ainvoke([
+        SystemMessage(content=FALLBACK_REFUSAL_SYSTEM_PROMPT),
+        HumanMessage(content=f"User Question: {question}")
+    ])
+
+    return {"generation": response.content.strip(), "citations": []}
