@@ -16,7 +16,7 @@ class PDFParser(BaseParser):
     """
     Parser for PDF files. Preserves the original production hybrid architecture.
     """
-    def __init__(self, strategy: str = "hi_res", fallback_pages: list = None):
+    def __init__(self, strategy: str = "hybrid", fallback_pages: list = None):
         self.strategy = strategy
         self.fallback_pages = fallback_pages
         self._cached_raw_elements = None # Store raw unstructured elements for chunking and validation
