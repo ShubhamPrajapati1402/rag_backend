@@ -96,25 +96,10 @@ Respond with ONLY a JSON object:
 }"""
 
 
-HALLUCINATION_GUARD_PROMPT = """You are an expert hallucination and groundedness auditor for an enterprise RAG system.
-Your job is to verify whether the factual statements, metrics, and claims in the Generated Answer are supported by the Retrieved Context.
-
-Rules:
-1. If the numbers and key facts in the Generated Answer match or are supported by the Retrieved Context, mark is_grounded: true.
-2. Only mark is_grounded: false if the answer makes up claims or metrics completely absent from the context.
-3. If correcting an answer, provide a complete, well-formatted response with proper Markdown linebreaks for tables and headers.
-
-Respond with ONLY a JSON object formatted as:
-{
-  "is_grounded": true | false,
-  "groundedness_score": 0.0 to 1.0,
-  "corrected_answer": "Only provide this if is_grounded is false, otherwise null"
-}"""
-
 
 TITLE_GENERATION_PROMPT = """You are an AI assistant tasked with creating a concise, descriptive title for a conversation.
 Based on the user's first question and the assistant's reply:
-1. Create a 3 to 6-word title that captures the core subject/entity of the inquiry.
+1. Create a 7 to 10-word title that captures the core subject/entity of the inquiry.
 2. Do NOT use quotation marks, punctuation, prefixes like "Title:", or conversational filler.
 3. Be specific (e.g. "Q3 Revenue Analysis", "Legal Contract Terms", "System Architecture Overview").
 

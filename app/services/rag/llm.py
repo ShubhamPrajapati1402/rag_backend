@@ -33,7 +33,7 @@ async def agenerate_chat_title(question: str, response: str) -> str:
     Asynchronously generates an intelligent 3-to-6 word conversation title using ainvoke.
     """
     try:
-        llm = get_groq_llm(temperature=0.2)
+        llm = get_groq_llm(temperature=0.5)
         prompt = TITLE_GENERATION_PROMPT.format(
             question=question.strip(),
             response=response[:300].strip()
@@ -44,7 +44,7 @@ async def agenerate_chat_title(question: str, response: str) -> str:
     except Exception as e:
         logger.warning(f"Async LLM Title generation failed: {e}. Using fallback.")
         words = question.strip().split()
-        return " ".join(words[:6]) if words else "New Conversation"
+        return " ".join(words[:10]) if words else "New Conversation"
 
 def generate_chat_title(question: str, response: str) -> str:
     """

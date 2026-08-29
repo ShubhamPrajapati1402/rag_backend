@@ -11,8 +11,7 @@ from app.services.rag.nodes import (
     rag_generator_node,
     direct_generator_node,
     fallback_generator_node,
-    input_guardrail_node,
-    hallucination_guard_node
+    input_guardrail_node
 )
 
 def decide_input_guardrail(state: RAGState) -> Literal["router", "__end__"]:
@@ -49,7 +48,6 @@ def build_rag_graph():
     workflow.add_node("reranker", reranker_node)
     workflow.add_node("grader", grader_node)
     workflow.add_node("rag_generator", rag_generator_node)
-    workflow.add_node("hallucination_guard", hallucination_guard_node)
     workflow.add_node("direct_generator", direct_generator_node)
     workflow.add_node("fallback_generator", fallback_generator_node)
 

@@ -9,10 +9,7 @@ from app.services.rag.nodes.generator import (
     direct_generator_node,
     fallback_generator_node
 )
-from app.services.rag.nodes.guardrail import (
-    input_guardrail_node,
-    hallucination_guard_node
-)
+from app.services.rag.nodes.guardrail import input_guardrail_node
 
 __all__ = [
     "summarizer_node",
@@ -24,6 +21,5 @@ __all__ = [
     "rag_generator_node",
     "direct_generator_node",
     "fallback_generator_node",
-    "input_guardrail_node",
-    "hallucination_guard_node"
+    "input_guardrail_node"
 ]

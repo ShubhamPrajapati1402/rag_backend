@@ -4,10 +4,7 @@ from loguru import logger
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.schemas.rag_state import RAGState
 from app.services.rag.llm import get_groq_llm
-from app.services.rag.prompts import (
-    INPUT_GUARDRAIL_PROMPT,
-    HALLUCINATION_GUARD_PROMPT
-)
+from app.services.rag.prompts import INPUT_GUARDRAIL_PROMPT
 
 # Common prompt injection signatures for sub-millisecond heuristic check
 INJECTION_SIGNATURES = (
@@ -60,50 +57,3 @@ async def input_guardrail_node(state: RAGState) -> dict:
             logger.warning(f"[InputGuardrail] Guardrail check error: {e}")
 
     return {"route": state.get("route", "")}
-
-
-async def hallucination_guard_node(state: RAGState) -> dict:
-    """
-    Validates whether the generated answer is strictly grounded in the retrieved document chunks.
-    If unsupported claims or hallucinations are detected, corrects the answer.
-    """
-    generation = state.get("generation", "")
-    documents = state.get("documents", [])
-    question = state.get("question", "")
-
-    if not documents or not generation:
-        return {}
-
-    logger.info(f"[HallucinationGuardNode] Auditing groundedness for generated answer...")
-
-    context_snippets = "\n\n".join([
-        f"Excerpt [{i+1}] (File: {doc.get('filename')}, Page: {doc.get('page_number')}):\n{doc.get('text_content', '')[:1500]}"
-        for i, doc in enumerate(documents[:5])
-    ])
-
-    prompt = f"Retrieved Context:\n{context_snippets}\n\nUser Question:\n{question}\n\nGenerated Answer:\n{generation}"
-
-    try:
-        llm = get_groq_llm(temperature=0.0)
-        response = await llm.ainvoke([
-            SystemMessage(content=HALLUCINATION_GUARD_PROMPT),
-            HumanMessage(content=prompt)
-        ])
-
-        content = response.content.strip()
-        if "{" in content and "}" in content:
-            data = json.loads(content[content.find("{"):content.rfind("}")+1])
-            is_grounded = data.get("is_grounded", True)
-            score = data.get("groundedness_score", 1.0)
-            logger.info(f"[HallucinationGuardNode] Groundedness Score: {score} | Is Grounded: {is_grounded}")
-
-            if not is_grounded and data.get("corrected_answer"):
-                logger.warning(f"[HallucinationGuardNode] Hallucination detected! Intercepting with corrected grounded answer.")
-                corrected = data["corrected_answer"]
-                corrected = re.sub(r'\|\s*\|(?=[-\s\w*#])', '|\n|', corrected)
-                return {"generation": corrected}
-
-    except Exception as e:
-        logger.warning(f"[HallucinationGuardNode] Groundedness audit warning: {e}")
-
-    return {}
