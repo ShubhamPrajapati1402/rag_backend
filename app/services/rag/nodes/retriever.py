@@ -13,7 +13,7 @@ def retriever_node(state: RAGState) -> dict:
     query = state.get("rewritten_query") or state.get("question", "")
     document_ids = state.get("document_ids")
     user_id = state.get("user_id")
-    top_k = 8
+    top_k = 20
 
     logger.info(f"[RetrieverNode] Embedding query for vector search: '{query[:60]}...'")
 

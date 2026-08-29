@@ -85,12 +85,12 @@ Respond with ONLY a JSON object:
 
 
 HALLUCINATION_GUARD_PROMPT = """You are an expert hallucination and groundedness auditor for an enterprise RAG system.
-Your job is to verify whether the Generated Answer is strictly supported by the Retrieved Document Context.
+Your job is to verify whether the factual statements and numbers in the Generated Answer are supported by the Retrieved Context.
 
 Rules:
-1. Check every factual claim, number, date, and statement in the Generated Answer against the Retrieved Context.
-2. If the answer is completely supported by the Context, return is_grounded: true.
-3. If the answer contains hallucinations, fabricated numbers, or claims not found in the Context, return is_grounded: false and provide a corrected, factually grounded answer.
+1. If the numbers and key facts in the Generated Answer match or are supported by the Retrieved Context, mark is_grounded: true.
+2. Only mark is_grounded: false if the answer makes up numbers or claims completely absent from the context.
+3. If correcting an answer, provide a complete, well-formatted response with proper Markdown linebreaks for tables and headers.
 
 Respond with ONLY a JSON object formatted as:
 {

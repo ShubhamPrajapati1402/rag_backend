@@ -112,7 +112,7 @@ async def stream_chat_message(
 
                 # Node execution lifecycle events with live layman thoughts
                 if kind == "on_chain_start" and name in (
-                    "summarizer", "input_guardrail", "router", "rewriter", "retriever", "grader",
+                    "summarizer", "input_guardrail", "router", "rewriter", "retriever", "reranker", "grader",
                     "rag_generator", "hallucination_guard", "direct_generator", "fallback_generator"
                 ):
                     thought_map = {
@@ -121,6 +121,7 @@ async def stream_chat_message(
                         "router": "Analyzing question intent to choose best knowledge path...",
                         "rewriter": "Refining search terms and resolving conversation context...",
                         "retriever": "Searching vector database for high-similarity document excerpts...",
+                        "reranker": "Cross-encoder reranking candidate excerpts to isolate highest-precision context...",
                         "grader": "Evaluating retrieved excerpts for factual relevance...",
                         "rag_generator": "Formulating grounded answer with verified citations...",
                         "hallucination_guard": "Auditing answer groundedness against source documents...",
@@ -137,7 +138,7 @@ async def stream_chat_message(
                     yield format_sse("node_status", {"node": name, "status": "started"})
 
                 elif kind == "on_chain_end" and name in (
-                    "summarizer", "input_guardrail", "router", "rewriter", "retriever", "grader",
+                    "summarizer", "input_guardrail", "router", "rewriter", "retriever", "reranker", "grader",
                     "rag_generator", "hallucination_guard", "direct_generator", "fallback_generator"
                 ):
                     output_data = event.get("data", {}).get("output", {})
@@ -155,7 +156,9 @@ async def stream_chat_message(
                         if "rewritten_query" in output_data and name == "rewriter":
                             end_thought = f"Optimized search query: \"{output_data['rewritten_query']}\""
                         if "documents" in output_data and name == "retriever":
-                            end_thought = f"Found {len(output_data['documents'])} candidate excerpts from documents."
+                            end_thought = f"Retrieved {len(output_data['documents'])} broad candidate excerpts."
+                        if "documents" in output_data and name == "reranker":
+                            end_thought = f"Isolated top {len(output_data['documents'])} precision excerpts via Cross-Encoder."
                         if "documents" in output_data and name == "grader":
                             score = int(output_data.get("relevance_score", 1.0) * 100)
                             end_thought = f"Verified {len(output_data['documents'])} relevant excerpts (Relevance Score: {score}%)."

@@ -76,7 +76,7 @@ async def hallucination_guard_node(state: RAGState) -> dict:
     logger.info(f"[HallucinationGuardNode] Auditing groundedness for generated answer...")
 
     context_snippets = "\n\n".join([
-        f"Excerpt [{i+1}]: {doc.get('text_content', '')[:300]}"
+        f"Excerpt [{i+1}] (File: {doc.get('filename')}, Page: {doc.get('page_number')}):\n{doc.get('text_content', '')[:1500]}"
         for i, doc in enumerate(documents[:5])
     ])
 

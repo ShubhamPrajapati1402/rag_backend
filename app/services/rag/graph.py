@@ -6,6 +6,7 @@ from app.services.rag.nodes import (
     router_node,
     rewriter_node,
     retriever_node,
+    reranker_node,
     grader_node,
     rag_generator_node,
     direct_generator_node,
@@ -45,6 +46,7 @@ def build_rag_graph():
     workflow.add_node("router", router_node)
     workflow.add_node("rewriter", rewriter_node)
     workflow.add_node("retriever", retriever_node)
+    workflow.add_node("reranker", reranker_node)
     workflow.add_node("grader", grader_node)
     workflow.add_node("rag_generator", rag_generator_node)
     workflow.add_node("hallucination_guard", hallucination_guard_node)
@@ -75,9 +77,10 @@ def build_rag_graph():
         }
     )
 
-    # 5. Standard Retrieval Pipeline Edges
+    # 5. Standard Two-Stage Retrieval Pipeline Edges
     workflow.add_edge("rewriter", "retriever")
-    workflow.add_edge("retriever", "grader")
+    workflow.add_edge("retriever", "reranker")
+    workflow.add_edge("reranker", "grader")
 
     # 6. Post-Grading Conditional Edge
     workflow.add_conditional_edges(
