@@ -168,13 +168,15 @@ async def stream_chat_message(
                         "route": route_taken
                     })
 
-                # Streaming LLM tokens from generator nodes
+                # Streaming LLM tokens ONLY from generator nodes (ignore internal router/summarizer/grader LLM streams)
                 elif kind == "on_chat_model_stream":
-                    chunk = event.get("data", {}).get("chunk")
-                    if chunk and hasattr(chunk, "content") and chunk.content:
-                        token = chunk.content
-                        accumulated_text += token
-                        yield format_sse("token", {"text": token})
+                    current_node = event.get("metadata", {}).get("langgraph_node", "")
+                    if current_node in ("rag_generator", "direct_generator", "fallback_generator"):
+                        chunk = event.get("data", {}).get("chunk")
+                        if chunk and hasattr(chunk, "content") and chunk.content:
+                            token = chunk.content
+                            accumulated_text += token
+                            yield format_sse("token", {"text": token})
 
             # Send citations if document context was used
             if final_citations:
