@@ -92,101 +92,117 @@ async def stream_chat_message(
     }
 
     async def event_generator() -> AsyncGenerator[str, None]:
-        # Send initial metadata
-        yield format_sse("metadata", {
-            "session_id": session_id,
-            "title": initial_title,
-            "is_new_session": is_new_session
-        })
-
-        accumulated_text = ""
-        final_citations = []
-        route_taken = "vectorstore"
-        final_state = {}
-
         try:
-            # Stream LangGraph execution events
-            async for event in rag_agent_app.astream_events(initial_state, version="v2"):
-                kind = event.get("event")
-                name = event.get("name", "")
+            # Send initial metadata
+            yield format_sse("metadata", {
+                "session_id": session_id,
+                "title": initial_title,
+                "is_new_session": is_new_session
+            })
 
-                # Node execution lifecycle events with live layman thoughts
-                if kind == "on_chain_start" and name in (
-                    "summarizer", "input_guardrail", "router", "rewriter", "retriever", "reranker", "grader",
-                    "rag_generator", "hallucination_guard", "direct_generator", "fallback_generator"
-                ):
-                    thought_map = {
-                        "summarizer": "Recalling key topics from your conversation history...",
-                        "input_guardrail": "Validating request against security and safety guardrails...",
-                        "router": "Analyzing question intent to choose best knowledge path...",
-                        "rewriter": "Refining search terms and resolving conversation context...",
-                        "retriever": "Searching vector database for high-similarity document excerpts...",
-                        "reranker": "Cross-encoder reranking candidate excerpts to isolate highest-precision context...",
-                        "grader": "Evaluating retrieved excerpts for factual relevance...",
-                        "rag_generator": "Formulating grounded answer with verified citations...",
-                        "hallucination_guard": "Auditing answer groundedness against source documents...",
-                        "direct_generator": "Formulating direct conversational response...",
-                        "fallback_generator": "Checking document coverage..."
-                    }
-                    thought = thought_map.get(name, f"Executing {name}...")
+            accumulated_text = ""
+            final_citations = []
+            route_taken = "vectorstore"
+            final_state = {}
 
-                    yield format_sse("trace", {
-                        "step": name,
-                        "status": "active",
-                        "thought": thought
-                    })
-                    yield format_sse("node_status", {"node": name, "status": "started"})
+            # 1. Fast Redis Q&A Cache Check
+            from app.services.rag.cache import RAGCacheService
+            cached_resp = RAGCacheService.get_cached_response(user_id, request.document_ids, request.question)
+            if cached_resp:
+                yield format_sse("trace", {
+                    "step": "cache",
+                    "status": "completed",
+                    "thought": "Redis Cache HIT: Retrieved verified analytical response instantly."
+                })
+                accumulated_text = cached_resp.get("generation", "")
+                final_citations = cached_resp.get("citations", [])
+                route_taken = cached_resp.get("route", "vectorstore")
 
-                elif kind == "on_chain_end" and name in (
-                    "summarizer", "input_guardrail", "router", "rewriter", "retriever", "reranker", "grader",
-                    "rag_generator", "hallucination_guard", "direct_generator", "fallback_generator"
-                ):
-                    output_data = event.get("data", {}).get("output", {})
-                    end_thought = "Completed step."
+                # Stream complete cached generation
+                yield format_sse("token", {"text": accumulated_text})
+            else:
+                # Stream LangGraph execution events
+                async for event in rag_agent_app.astream_events(initial_state, version="v2"):
+                    kind = event.get("event")
+                    name = event.get("name", "")
 
-                    if isinstance(output_data, dict):
-                        if "route" in output_data:
-                            route_taken = output_data["route"]
-                            if route_taken == "blocked":
-                                end_thought = "Security check: Request flagged by policy."
-                            else:
-                                end_thought = f"Strategy chosen: {'Document Knowledge Search' if route_taken == 'vectorstore' else 'Direct Conversation'}"
-                        if "citations" in output_data:
-                            final_citations = output_data["citations"]
-                        if "rewritten_query" in output_data and name == "rewriter":
-                            end_thought = f"Optimized search query: \"{output_data['rewritten_query']}\""
-                        if "documents" in output_data and name == "retriever":
-                            end_thought = f"Retrieved {len(output_data['documents'])} broad candidate excerpts."
-                        if "documents" in output_data and name == "reranker":
-                            end_thought = f"Isolated top {len(output_data['documents'])} precision excerpts via Cross-Encoder."
-                        if "documents" in output_data and name == "grader":
-                            score = int(output_data.get("relevance_score", 1.0) * 100)
-                            end_thought = f"Verified {len(output_data['documents'])} relevant excerpts (Relevance Score: {score}%)."
-                        if name == "hallucination_guard":
-                            end_thought = "Groundedness verified: 100% faithful to source document context."
-                        if name in ("rag_generator", "direct_generator"):
-                            end_thought = "Answer generated and verified against source documents."
+                    # Node execution lifecycle events with live layman thoughts
+                    if kind == "on_chain_start" and name in (
+                        "summarizer", "input_guardrail", "router", "rewriter", "retriever", "reranker", "grader",
+                        "rag_generator", "hallucination_guard", "direct_generator", "fallback_generator"
+                    ):
+                        thought_map = {
+                            "summarizer": "Recalling key topics from your conversation history...",
+                            "input_guardrail": "Validating request against security and safety guardrails...",
+                            "router": "Analyzing question intent to choose best knowledge path...",
+                            "rewriter": "Refining search terms and resolving conversation context...",
+                            "retriever": "Searching vector database for high-similarity document excerpts...",
+                            "reranker": "Cross-encoder reranking candidate excerpts to isolate highest-precision context...",
+                            "grader": "Evaluating retrieved excerpts for factual relevance...",
+                            "rag_generator": "Formulating grounded answer with verified citations...",
+                            "hallucination_guard": "Auditing answer groundedness against source documents...",
+                            "direct_generator": "Formulating direct conversational response...",
+                            "fallback_generator": "Checking document coverage..."
+                        }
+                        thought = thought_map.get(name, f"Executing {name}...")
 
-                    yield format_sse("trace", {
-                        "step": name,
-                        "status": "done",
-                        "thought": end_thought
-                    })
-                    yield format_sse("node_status", {
-                        "node": name,
-                        "status": "completed",
-                        "route": route_taken
-                    })
+                        yield format_sse("trace", {
+                            "step": name,
+                            "status": "active",
+                            "thought": thought
+                        })
+                        yield format_sse("node_status", {"node": name, "status": "started"})
 
-                # Streaming LLM tokens ONLY from generator nodes (ignore internal router/summarizer/grader LLM streams)
-                elif kind == "on_chat_model_stream":
-                    current_node = event.get("metadata", {}).get("langgraph_node", "")
-                    if current_node in ("rag_generator", "direct_generator", "fallback_generator"):
-                        chunk = event.get("data", {}).get("chunk")
-                        if chunk and hasattr(chunk, "content") and chunk.content:
-                            token = chunk.content
-                            accumulated_text += token
-                            yield format_sse("token", {"text": token})
+                    elif kind == "on_chain_end" and name in (
+                        "summarizer", "input_guardrail", "router", "rewriter", "retriever", "reranker", "grader",
+                        "rag_generator", "hallucination_guard", "direct_generator", "fallback_generator"
+                    ):
+                        output_data = event.get("data", {}).get("output", {})
+                        end_thought = "Completed step."
+
+                        if isinstance(output_data, dict):
+                            if "route" in output_data:
+                                route_taken = output_data["route"]
+                                if route_taken == "blocked":
+                                    end_thought = "Security check: Request flagged by policy."
+                                else:
+                                    end_thought = f"Strategy chosen: {'Document Knowledge Search' if route_taken == 'vectorstore' else 'Direct Conversation'}"
+                            if "citations" in output_data:
+                                final_citations = output_data["citations"]
+                            if "rewritten_query" in output_data and name == "rewriter":
+                                end_thought = f"Optimized search query: \"{output_data['rewritten_query']}\""
+                            if "documents" in output_data and name == "retriever":
+                                end_thought = f"Retrieved {len(output_data['documents'])} broad candidate excerpts."
+                            if "documents" in output_data and name == "reranker":
+                                end_thought = f"Isolated top {len(output_data['documents'])} precision excerpts via Cross-Encoder."
+                            if "documents" in output_data and name == "grader":
+                                score = int(output_data.get("relevance_score", 1.0) * 100)
+                                end_thought = f"Verified {len(output_data['documents'])} relevant excerpts (Relevance Score: {score}%)."
+                            if name == "hallucination_guard":
+                                end_thought = "Groundedness verified: 100% faithful to source document context."
+                            if name in ("rag_generator", "direct_generator"):
+                                end_thought = "Answer generated and verified against source documents."
+
+                        yield format_sse("trace", {
+                            "step": name,
+                            "status": "done",
+                            "thought": end_thought
+                        })
+                        yield format_sse("node_status", {
+                            "node": name,
+                            "status": "completed",
+                            "route": route_taken
+                        })
+
+                    # Streaming LLM tokens ONLY from generator nodes (ignore internal router/summarizer/grader LLM streams)
+                    elif kind == "on_chat_model_stream":
+                        current_node = event.get("metadata", {}).get("langgraph_node", "")
+                        if current_node in ("rag_generator", "direct_generator", "fallback_generator"):
+                            chunk = event.get("data", {}).get("chunk")
+                            if chunk and hasattr(chunk, "content") and chunk.content:
+                                token = chunk.content.replace("||", "|\n|")
+                                accumulated_text += token
+                                yield format_sse("token", {"text": token})
 
             # Send citations if document context was used
             if final_citations:
@@ -221,6 +237,19 @@ async def stream_chat_message(
                 if db_session:
                     db_session.updated_at = datetime.now(ZoneInfo("Asia/Kolkata"))
                 persist_db.commit()
+
+                # Cache verified response in Redis
+                if route_taken == "vectorstore" and accumulated_text and final_citations:
+                    RAGCacheService.set_cached_response(
+                        user_id=user_id,
+                        document_ids=request.document_ids,
+                        query=request.question,
+                        response_data={
+                            "generation": accumulated_text,
+                            "citations": final_citations,
+                            "route": route_taken
+                        }
+                    )
             finally:
                 persist_db.close()
 

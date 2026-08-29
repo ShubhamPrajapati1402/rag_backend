@@ -102,4 +102,12 @@ async def delete_user_document(
 
     db.delete(doc)
     db.commit()
+
+    # Invalidate cached Q&A responses
+    try:
+        from app.services.rag.cache import RAGCacheService
+        RAGCacheService.invalidate_all_rag_responses()
+    except Exception as e:
+        pass
+
     return None

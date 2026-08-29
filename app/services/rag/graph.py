@@ -92,11 +92,8 @@ def build_rag_graph():
         }
     )
 
-    # 7. Post-Generation Hallucination Guardrail Edge
-    workflow.add_edge("rag_generator", "hallucination_guard")
-
-    # 8. Terminal Edges
-    workflow.add_edge("hallucination_guard", END)
+    # 7. Terminal Edges (Instant completion upon generation stream finish)
+    workflow.add_edge("rag_generator", END)
     workflow.add_edge("direct_generator", END)
     workflow.add_edge("fallback_generator", END)
 

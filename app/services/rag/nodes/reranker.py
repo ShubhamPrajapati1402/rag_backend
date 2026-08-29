@@ -120,7 +120,7 @@ async def reranker_node(state: RAGState) -> dict:
     """
     documents = state.get("documents", [])
     query = state.get("rewritten_query") or state.get("question", "")
-    target_k = 5
+    target_k = 7
 
     if not documents:
         logger.info("[RerankerNode] No candidate documents to rerank.")

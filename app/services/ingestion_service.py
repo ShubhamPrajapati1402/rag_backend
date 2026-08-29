@@ -177,6 +177,13 @@ async def stream_dynamic_ingestion(
                 doc.status = DocumentStatus.COMPLETED
                 doc.completed_at = datetime.now(ZoneInfo("Asia/Kolkata"))
             db.commit()
+
+            # Invalidate any cached Q&A responses so the new document is immediately queried
+            try:
+                from app.services.rag.cache import RAGCacheService
+                RAGCacheService.invalidate_all_rag_responses()
+            except Exception as e:
+                logger.debug(f"[IngestStream] Cache invalidation warning: {e}")
         finally:
             db.close()
 
