@@ -28,6 +28,8 @@ class Document(Base):
     status = Column(Enum(DocumentStatus), default=DocumentStatus.NEW, nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(ZoneInfo("Asia/Kolkata")))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(ZoneInfo("Asia/Kolkata")), onupdate=lambda: datetime.now(ZoneInfo("Asia/Kolkata")))
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    file_path = Column(String, nullable=True)
 
 class DocumentChunk(Base):
     """

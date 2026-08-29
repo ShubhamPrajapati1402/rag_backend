@@ -24,7 +24,7 @@ async def rewriter_node(state: RAGState) -> dict:
     logger.info(f"[RewriterNode] Analyzing conversation history and summary for query expansion...")
     
     try:
-        llm = get_groq_llm(temperature=0.2)
+        llm = get_groq_llm(temperature=0.3)
         
         context_parts = []
         if summary:

@@ -22,7 +22,7 @@ async def router_node(state: RAGState) -> dict:
         return {"route": "direct"}
 
     try:
-        llm = get_groq_llm(temperature=0.2)
+        llm = get_groq_llm(temperature=0.3)
         
         context_parts = []
         if summary:

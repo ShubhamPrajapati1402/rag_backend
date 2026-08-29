@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from pydantic import BaseModel
 from datetime import datetime
+from loguru import logger
 
 from app.db.session import get_db
 from app.models.user import User
@@ -14,9 +15,14 @@ from app.services.ingestion_service import stream_dynamic_ingestion
 
 router = APIRouter(prefix="/ingest", tags=["Ingestion & Vector Processing"])
 
+import os
+
 class DocumentSummary(BaseModel):
     id: int
     filename: str
+    format: str
+    file_type: str
+    size: str
     status: str
     chunk_count: int
     created_at: Optional[datetime]
@@ -24,6 +30,19 @@ class DocumentSummary(BaseModel):
 
     class Config:
         from_attributes = True
+
+class DocumentPreviewResponse(BaseModel):
+    id: int
+    filename: str
+    format: str
+    file_type: str
+    size: str
+    status: str
+    chunk_count: int
+    summary: str
+    extracted_preview: str
+    created_at: Optional[datetime]
+    completed_at: Optional[datetime]
 
 @router.post("/stream", summary="Upload and ingest document with dynamic layman SSE progress")
 async def stream_upload_and_ingest(
@@ -51,6 +70,10 @@ async def stream_upload_and_ingest(
         }
     )
 
+def _get_file_format(filename: str) -> str:
+    _, ext = os.path.splitext(filename)
+    return ext.lstrip(".").upper() if ext else "TXT"
+
 @router.get("/documents", response_model=List[DocumentSummary], summary="List all user uploaded documents")
 async def list_user_documents(
     db: Session = Depends(get_db),
@@ -64,26 +87,85 @@ async def list_user_documents(
             Document.status,
             Document.created_at,
             Document.completed_at,
-            func.count(DocumentChunk.id).label("chunk_count")
+            func.count(DocumentChunk.id).label("chunk_count"),
+            func.sum(func.length(DocumentChunk.text_content)).label("total_chars")
         )
         .outerjoin(DocumentChunk, Document.id == DocumentChunk.document_id)
-        .filter(Document.user_id == current_user.id)
+        .filter((Document.user_id == current_user.id) | (Document.user_id.is_(None)))
         .group_by(Document.id)
         .order_by(Document.created_at.desc())
         .all()
     )
 
-    return [
-        DocumentSummary(
-            id=d.id,
-            filename=d.filename,
-            status=d.status.value if hasattr(d.status, "value") else str(d.status),
-            chunk_count=d.chunk_count,
-            created_at=d.created_at,
-            completed_at=d.completed_at
+    summaries = []
+    for d in docs:
+        fmt = _get_file_format(d.filename)
+        # Approximate file size based on extracted character length (1 char ~= 1 byte)
+        chars = d.total_chars or 0
+        if chars >= 1024 * 1024:
+            size_str = f"{chars / (1024 * 1024):.1f} MB"
+        elif chars > 0:
+            size_str = f"{max(0.1, chars / 1024):.1f} KB"
+        else:
+            size_str = "0.5 KB"
+
+        summaries.append(
+            DocumentSummary(
+                id=d.id,
+                filename=d.filename,
+                format=fmt,
+                file_type=fmt,
+                size=size_str,
+                status=d.status.value if hasattr(d.status, "value") else str(d.status),
+                chunk_count=d.chunk_count,
+                created_at=d.created_at,
+                completed_at=d.completed_at
+            )
         )
-        for d in docs
-    ]
+
+    return summaries
+
+@router.get("/documents/{document_id}/preview", response_model=DocumentPreviewResponse, summary="Get document content preview")
+async def get_document_preview(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Fetches real parsed content preview and metadata for a specific document."""
+    doc = db.query(Document).filter(
+        Document.id == document_id,
+        (Document.user_id == current_user.id) | (Document.user_id.is_(None))
+    ).first()
+
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+
+    chunks = (
+        db.query(DocumentChunk)
+        .filter(DocumentChunk.document_id == doc.id)
+        .order_by(DocumentChunk.chunk_index.asc())
+        .limit(5)
+        .all()
+    )
+
+    first_chunk_text = chunks[0].text_content if chunks else "No text extracted."
+    fmt = _get_file_format(doc.filename)
+    total_chars = sum(len(c.text_content) for c in chunks)
+    size_str = f"{max(0.1, total_chars / 1024):.1f} KB" if total_chars > 0 else "0.5 KB"
+
+    return DocumentPreviewResponse(
+        id=doc.id,
+        filename=doc.filename,
+        format=fmt,
+        file_type=fmt,
+        size=size_str,
+        status=doc.status.value if hasattr(doc.status, "value") else str(doc.status),
+        chunk_count=len(chunks),
+        summary=f"Parsed {fmt} document containing {len(chunks)} structural sections.",
+        extracted_preview=first_chunk_text[:1200],
+        created_at=doc.created_at,
+        completed_at=doc.completed_at
+    )
 
 @router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete document")
 async def delete_user_document(
@@ -98,16 +180,21 @@ async def delete_user_document(
     ).first()
 
     if not doc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found or you do not have permission to delete it."
+        )
 
-    db.delete(doc)
-    db.commit()
-
-    # Invalidate cached Q&A responses
+    # Invalidate cache before deletion
     try:
         from app.services.rag.cache import RAGCacheService
         RAGCacheService.invalidate_all_rag_responses()
     except Exception as e:
-        pass
+        logger.debug(f"[DeleteDocument] Cache invalidation warning: {e}")
+
+    # Chunks are deleted automatically via CASCADE constraint, or manually
+    db.query(DocumentChunk).filter(DocumentChunk.document_id == document_id).delete()
+    db.delete(doc)
+    db.commit()
 
     return None

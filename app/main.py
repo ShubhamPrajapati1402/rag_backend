@@ -1,5 +1,10 @@
+import os
 import sys
 from pathlib import Path
+
+# Disable unstructured library telemetry and tracking to prevent network hangs on Windows
+os.environ["SCARF_NO_ANALYTICS"] = "true"
+os.environ["DO_NOT_TRACK"] = "true"
 
 # Ensure project root directory is in sys.path when running app/main.py directly
 project_root = Path(__file__).resolve().parent.parent

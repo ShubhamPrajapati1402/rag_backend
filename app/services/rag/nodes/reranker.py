@@ -64,11 +64,15 @@ async def rerank_with_hf(query: str, documents: List[Dict[str, Any]]) -> List[Di
 async def rerank_with_groq_fallback(query: str, documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Fast, resilient listwise LLM reranker using Groq when Hugging Face API is unavailable.
+    Limits to top 10 candidates to strictly avoid Groq's 8,000 TPM rate limits (429).
     """
     logger.info("[RerankerNode] Executing Groq Flash Listwise Reranker fallback...")
     
+    # Filter to top 10 candidates for the LLM call to save tokens and prevent 429
+    candidate_docs = documents[:10]
+    
     candidates_text = []
-    for i, doc in enumerate(documents):
+    for i, doc in enumerate(candidate_docs):
         fn = doc.get("filename", "")
         pg = doc.get("page_number", "N/A")
         snippet = doc.get("text_content", "")[:200].replace("\n", " ").strip()
@@ -79,34 +83,39 @@ async def rerank_with_groq_fallback(query: str, documents: List[Dict[str, Any]])
         f"Candidate Excerpts:\n" + "\n".join(candidates_text)
     )
 
-    llm = get_groq_llm(temperature=0.0)
+    llm = get_groq_llm(temperature=0.3)
     response = await llm.ainvoke([
         SystemMessage(content=LISTWISE_RERANK_PROMPT),
         HumanMessage(content=prompt)
     ])
 
     content = response.content.strip()
+    reranked = []
+    seen = set()
+    
     if "{" in content and "}" in content:
         data = json.loads(content[content.find("{"):content.rfind("}")+1])
         top_indices = data.get("top_indices", [])
         
-        reranked = []
-        seen = set()
         for rank, idx in enumerate(top_indices):
-            if isinstance(idx, int) and 0 <= idx < len(documents) and idx not in seen:
-                doc_copy = dict(documents[idx])
+            if isinstance(idx, int) and 0 <= idx < len(candidate_docs) and idx not in seen:
+                doc_copy = dict(candidate_docs[idx])
                 doc_copy["original_rank"] = idx + 1
                 doc_copy["rerank_score"] = round(1.0 - (rank * 0.05), 4)
                 reranked.append(doc_copy)
                 seen.add(idx)
 
-        # Append any remaining docs up to top_k
-        for idx, doc in enumerate(documents):
-            if idx not in seen:
-                doc_copy = dict(doc)
-                doc_copy["original_rank"] = idx + 1
-                doc_copy["rerank_score"] = 0.5
-                reranked.append(doc_copy)
+    # Append any remaining docs from the entire original list to preserve coverage
+    for idx, doc in enumerate(documents):
+        # If it was in the top 10 but not chosen by LLM, or was in the remaining 10
+        is_in_candidate_but_not_chosen = (idx < 10 and idx not in seen)
+        is_outside_candidate_pool = (idx >= 10)
+        
+        if is_in_candidate_but_not_chosen or is_outside_candidate_pool:
+            doc_copy = dict(doc)
+            doc_copy["original_rank"] = idx + 1
+            doc_copy["rerank_score"] = 0.5 - (idx * 0.01) # preserve raw similarity order fallback
+            reranked.append(doc_copy)
                 
         return reranked
 
