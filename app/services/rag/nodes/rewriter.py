@@ -13,8 +13,12 @@ async def rewriter_node(state: RAGState) -> dict:
     messages = state.get("messages", [])
     summary = state.get("summary", "") or ""
     
-    if len(messages) <= 1 and not summary:
-        logger.info(f"[RewriterNode] Single-turn query with no prior summary. Retaining: '{question}'")
+    words = question.lower().split()
+    pronouns = {"it", "its", "they", "them", "their", "this", "that", "these", "those", "he", "she", "him", "her", "previous", "above"}
+    has_pronoun = any(w.strip("?!.,'\"") in pronouns for w in words)
+
+    if (len(messages) <= 1 and not summary) or (not has_pronoun and len(words) >= 4):
+        logger.info(f"[RewriterNode] Clean standalone query detected. Retaining directly: '{question}'")
         return {"rewritten_query": question}
         
     logger.info(f"[RewriterNode] Analyzing conversation history and summary for query expansion...")

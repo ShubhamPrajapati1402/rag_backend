@@ -11,11 +11,10 @@ async def summarizer_node(state: RAGState) -> dict:
     messages = state.get("messages", [])
     existing_summary = state.get("summary", "") or ""
 
-    if len(messages) < 4 and not existing_summary:
-        logger.info("[SummarizerNode] Short conversation history (<4 messages). Passing through.")
+    if len(messages) < 6 or (existing_summary and len(messages) % 4 != 0):
         return {"summary": existing_summary}
 
-    logger.info(f"[SummarizerNode] Updating cumulative conversation summary ({len(messages)} messages)...")
+    logger.info(f"[SummarizerNode] Periodically updating cumulative conversation summary ({len(messages)} messages)...")
 
     try:
         llm = get_groq_llm(temperature=0.2)

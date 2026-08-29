@@ -1,3 +1,4 @@
+import re
 import json
 from loguru import logger
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -98,7 +99,9 @@ async def hallucination_guard_node(state: RAGState) -> dict:
 
             if not is_grounded and data.get("corrected_answer"):
                 logger.warning(f"[HallucinationGuardNode] Hallucination detected! Intercepting with corrected grounded answer.")
-                return {"generation": data["corrected_answer"]}
+                corrected = data["corrected_answer"]
+                corrected = re.sub(r'\|\s*\|(?=[-\s\w*#])', '|\n|', corrected)
+                return {"generation": corrected}
 
     except Exception as e:
         logger.warning(f"[HallucinationGuardNode] Groundedness audit warning: {e}")

@@ -41,7 +41,7 @@ async def rerank_with_hf(query: str, documents: List[Dict[str, Any]]) -> List[Di
 
     loop = asyncio.get_running_loop()
     def _post():
-        return requests.post(api_url, headers=headers, json=payload, timeout=8)
+        return requests.post(api_url, headers=headers, json=payload, timeout=2.0)
 
     response = await loop.run_in_executor(None, _post)
     if response.status_code == 200:

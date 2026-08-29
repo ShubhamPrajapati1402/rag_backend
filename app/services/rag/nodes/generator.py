@@ -1,3 +1,4 @@
+import re
 from typing import List, Dict, Any
 from loguru import logger
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -67,6 +68,8 @@ async def rag_generator_node(state: RAGState) -> dict:
     ])
 
     answer = response.content.strip()
+    # Ensure Markdown table rows have proper line breaks if squashed
+    answer = re.sub(r'\|\s*\|(?=[-\s\w*#])', '|\n|', answer)
     return {"generation": answer, "citations": citations}
 
 
