@@ -14,10 +14,13 @@ class Settings(BaseSettings):
     # LLM
     GROQ_API_KEY: str
     GROQ_MODEL_NAME: str
+    GEMINI_API_KEY: str
+    GEMINI_MODEL_NAME: str
     
-    # Embeddings
+    # Embeddings & Reranking
     HUGGINGFACE_API_KEY: str
     HUGGINGFACE_EMBEDDING_MODEL: str
+    HUGGINGFACE_RERANKER_MODEL: str
     EMBEDDING_MAX_WORKERS: int
     DOCUMENT_LEASE_MINUTES: int 
     

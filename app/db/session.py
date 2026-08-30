@@ -1,8 +1,8 @@
 from loguru import logger
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
-from app.models import Base, User, Document, DocumentChunk
+from app.models import Base, User, Document, DocumentChunk, ChatSession, ChatMessage
 
 # SQLAlchemy 2.0 requires "postgresql://" instead of "postgres://"
 db_url = settings.DATABASE_URL
@@ -23,8 +23,6 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def get_db():
     """
     Dependency function to generate and yield a new database session for each API request.
-    It ensures that the database connection is safely closed after the request is finished,
-    even if an error occurs during the request.
     """
     db = SessionLocal()
     try:
@@ -34,13 +32,19 @@ def get_db():
 
 def init_db():
     """
-    Initializes the database by creating all tables defined in our SQLAlchemy models.
-    If the tables already exist in Supabase, this function safely does nothing.
+    Initializes the database by creating all tables defined in our SQLAlchemy models
+    and running safe schema migrations for newly added columns.
     """
     try:
-        # This will create the table in Supabase if it doesn't exist yet
         Base.metadata.create_all(bind=engine)
-        logger.info("Database tables initialized successfully.")
+        
+        # Safe idempotent column additions for existing tables
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);"))
+            conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP WITH TIME ZONE;"))
+            conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_path TEXT;"))
+            
+        logger.info("Database tables initialized and migrated successfully.")
     except Exception as e:
         logger.error(f"Error initializing database: {e}")
         raise
