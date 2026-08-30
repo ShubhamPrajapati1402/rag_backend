@@ -17,7 +17,7 @@ async def summarizer_node(state: RAGState) -> dict:
     logger.info(f"[SummarizerNode] Periodically updating cumulative conversation summary ({len(messages)} messages)...")
 
     try:
-        llm = get_groq_llm(temperature=0.3)
+        llm = get_groq_llm(temperature=0.4)
         formatted_messages = "\n".join([
             f"{m.get('role', 'user').upper()}: {m.get('content', '')}"
             for m in messages
