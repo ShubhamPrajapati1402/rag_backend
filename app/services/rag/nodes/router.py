@@ -15,10 +15,12 @@ async def router_node(state: RAGState) -> dict:
     
     logger.info(f"[RouterNode] Evaluating route for question: '{question[:60]}...'")
     
-    # Fast heuristic check for simple standalone greetings
+    import re
+    # Fast regex heuristic check for simple standalone greetings / conversational starters
     lower_q = question.lower().strip("?!. ")
-    if lower_q in ("hi", "hello", "hey", "good morning", "good evening", "who are you", "what can you do", "help") and not summary:
-        logger.info(f"[RouterNode] Heuristic detected greeting -> direct")
+    is_greeting = bool(re.match(r'^(h+i+|h+e+y+|hello+|hola|sup|yo|howdy|greetings|good\s+(morning|afternoon|evening|night)|who\s+are\s+you|what\s+can\s+you\s+do|help)$', lower_q))
+    if is_greeting and not summary:
+        logger.info(f"[RouterNode] Fast regex heuristic detected conversational greeting '{question}' -> DIRECT (0ms)")
         return {"route": "direct"}
 
     try:

@@ -117,9 +117,7 @@ async def rerank_with_groq_fallback(query: str, documents: List[Dict[str, Any]])
             doc_copy["rerank_score"] = 0.5 - (idx * 0.01) # preserve raw similarity order fallback
             reranked.append(doc_copy)
                 
-        return reranked
-
-    return documents
+    return reranked if reranked else documents
 
 
 async def reranker_node(state: RAGState) -> dict:

@@ -180,8 +180,11 @@ async def stream_chat_message(
                                 end_thought = f"Verified {len(output_data['documents'])} relevant excerpts (Relevance Score: {score}%)."
                             if name == "hallucination_guard":
                                 end_thought = "Groundedness verified: 100% faithful to source document context."
-                            if name in ("rag_generator", "direct_generator"):
+                            if name in ("rag_generator", "direct_generator", "fallback_generator"):
                                 end_thought = "Answer generated and verified against source documents."
+                                if "generation" in output_data and not accumulated_text:
+                                    accumulated_text = output_data["generation"]
+                                    yield format_sse("token", {"text": accumulated_text})
 
                         yield format_sse("trace", {
                             "step": name,

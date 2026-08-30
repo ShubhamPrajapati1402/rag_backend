@@ -43,6 +43,7 @@ def init_db():
             conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);"))
             conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP WITH TIME ZONE;"))
             conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_path TEXT;"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_doc_chunks_fts ON document_chunks USING gin(to_tsvector('english', text_content));"))
             
         logger.info("Database tables initialized and migrated successfully.")
     except Exception as e:
