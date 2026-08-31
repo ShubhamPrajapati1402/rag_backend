@@ -1,9 +1,14 @@
 from typing import List, Optional
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
+import secrets
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.user import User
+from app.models.developer_invitation import DeveloperInvitation
 from app.schemas.user import (
     UserSignupRequest,
     UserLoginRequest,
@@ -12,13 +17,30 @@ from app.schemas.user import (
     OTPResendRequest,
     UserResponse,
     AuthMessageResponse,
-    TokenResponse
+    TokenResponse,
+    ManageDeveloperRequest,
+    InviteDeveloperRequest,
+    VerifyInviteResponse,
+    AcceptInviteRequest,
+    DeveloperMemberItem
 )
 from app.services.auth_service import AuthService
+from app.services.email_service import EmailService
+from app.core.websocket_manager import ws_manager
 from app.core.security import set_auth_cookie, delete_auth_cookie
-from app.api.deps import get_current_active_user
+from app.api.deps import get_current_active_user, get_current_superuser
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+def get_user_role(user: User) -> str:
+    """Determines authoritative developer role: SUPER_ADMIN, ADMIN, MEMBER, or USER."""
+    primary_owners = [e.strip().lower() for e in settings.DEVELOPER_EMAILS.split(",") if e.strip()]
+    if user.email.lower() in primary_owners:
+        return "SUPER_ADMIN"
+    if not user.is_superuser:
+        return "USER"
+    return user.developer_role or "MEMBER"
+
 
 @router.post(
     "/signup",
@@ -31,89 +53,79 @@ async def signup(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    """
-    Registers a new unverified user account and dispatches an OTP in the background.
-    Responds instantaneously (< 30ms) without waiting for SMTP server latency.
-    """
-    user = await AuthService.signup(db, signup_data, background_tasks=background_tasks)
+    user, message = await AuthService.register_user(db, signup_data, background_tasks)
     return AuthMessageResponse(
-        message="Signup initiated. A 6-digit verification code has been sent to your email.",
-        email=user.email
+        message=message,
+        user=UserResponse.model_validate(user) if user else None,
+        email=signup_data.email
     )
+
 
 @router.post(
     "/verify-otp",
     response_model=TokenResponse,
     status_code=status.HTTP_200_OK,
-    summary="Verify 6-digit OTP code & start authenticated cookie session"
+    summary="Verify registration OTP and authenticate"
 )
 async def verify_otp(
-    verify_data: OTPVerifyRequest,
+    otp_data: OTPVerifyRequest,
     response: Response,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    """
-    Validates the submitted OTP code from Redis with anti-bruteforce guards.
-    On success, activates the user, dispatches a welcome email in the background, sets an HttpOnly session cookie, and returns user data.
-    """
-    user, token = await AuthService.verify_signup_otp(db, verify_data, background_tasks=background_tasks)
-    set_auth_cookie(response, token)
-    return TokenResponse(
-        message="Email verified successfully. You are now logged in.",
-        user=UserResponse.model_validate(user),
-        access_token=token
+    user, access_token, message = await AuthService.verify_user_otp(
+        db, otp_data.email, otp_data.otp_code, background_tasks
     )
+    set_auth_cookie(response, access_token)
+    return TokenResponse(
+        message=message,
+        user=UserResponse.model_validate(user),
+        access_token=access_token
+    )
+
 
 @router.post(
     "/resend-otp",
     response_model=AuthMessageResponse,
     status_code=status.HTTP_200_OK,
-    summary="Resend verification code to email"
+    summary="Resend verification OTP"
 )
 async def resend_otp(
     resend_data: OTPResendRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    """
-    Issues a new verification OTP in background respecting cooldown and rate limits.
-    """
-    await AuthService.resend_signup_otp(db, resend_data, background_tasks=background_tasks)
-    return AuthMessageResponse(
-        message="A fresh verification code has been sent to your email.",
-        email=resend_data.email
-    )
+    message = await AuthService.resend_otp(db, resend_data.email, background_tasks)
+    return AuthMessageResponse(message=message, email=resend_data.email)
+
 
 @router.post(
     "/login",
     response_model=TokenResponse,
     status_code=status.HTTP_200_OK,
-    summary="Login with email & password"
+    summary="Authenticate with email and password"
 )
 async def login(
     login_data: UserLoginRequest,
     response: Response,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    """
-    Authenticates user credentials. If verified, sets a secure HttpOnly session cookie.
-    If unverified, sends a new OTP in background and prompts verification.
-    """
-    user, token = await AuthService.login(db, login_data, background_tasks=background_tasks)
-    set_auth_cookie(response, token)
-    return TokenResponse(
-        message="Login successful.",
-        user=UserResponse.model_validate(user),
-        access_token=token
+    user, access_token, message = await AuthService.authenticate_user(
+        db, login_data.email, login_data.password
     )
+    set_auth_cookie(response, access_token)
+    return TokenResponse(
+        message=message,
+        user=UserResponse.model_validate(user),
+        access_token=access_token
+    )
+
 
 @router.post(
     "/google",
     response_model=TokenResponse,
     status_code=status.HTTP_200_OK,
-    summary="Sign in or Sign up using Google OAuth2 ID Token"
+    summary="Authenticate or register seamlessly via Google OAuth2"
 )
 async def google_auth(
     google_data: GoogleAuthRequest,
@@ -121,76 +133,296 @@ async def google_auth(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    """
-    Authenticates Google OAuth2 ID Token, automatically provisions/links user account,
-    sends a welcome email in background on new registration, and sets an HttpOnly session cookie.
-    """
-    user, token = await AuthService.authenticate_google(db, google_data.id_token, background_tasks=background_tasks)
-    set_auth_cookie(response, token)
+    user, access_token, message = await AuthService.authenticate_google(
+        db, google_data.credential, background_tasks
+    )
+    set_auth_cookie(response, access_token)
     return TokenResponse(
-        message="Google authentication successful.",
+        message=message,
         user=UserResponse.model_validate(user),
-        access_token=token
+        access_token=access_token
     )
 
-@router.get(
-    "/me",
-    response_model=UserResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Get current logged-in user profile"
-)
-def get_me(
-    current_user: User = Depends(get_current_active_user)
-):
-    """
-    Returns the profile data of the currently authenticated user using session cookies.
-    """
-    return UserResponse.model_validate(current_user)
 
 @router.post(
     "/logout",
     response_model=AuthMessageResponse,
     status_code=status.HTTP_200_OK,
-    summary="Logout & clear session cookies"
+    summary="Sign out and clear session cookie"
 )
-def logout(
-    response: Response
-):
-    """
-    Clears the HttpOnly authentication session cookie.
-    """
+def logout(response: Response):
     delete_auth_cookie(response)
-    return AuthMessageResponse(
-        message="Logged out successfully."
-    )
+    return AuthMessageResponse(message="Successfully logged out.")
 
-from app.api.deps import get_current_superuser
-from app.schemas.user import ManageDeveloperRequest
+
+@router.get(
+    "/me",
+    response_model=UserResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get current authenticated user profile"
+)
+def get_me(current_user: User = Depends(get_current_active_user)):
+    resp = UserResponse.model_validate(current_user)
+    primary_owners = [e.strip().lower() for e in settings.DEVELOPER_EMAILS.split(",") if e.strip()]
+    resp.is_primary_owner = (current_user.email.lower() in primary_owners)
+    resp.developer_role = get_user_role(current_user)
+    return resp
+
+
+# --------------------------------------------------------------------------
+# DEVELOPER RBAC & TOKENIZED INVITATION ROUTES
+# --------------------------------------------------------------------------
 
 @router.get(
     "/developers",
-    response_model=List[UserResponse],
+    response_model=List[DeveloperMemberItem],
     status_code=status.HTTP_200_OK,
-    summary="List all users with developer/superuser access"
+    summary="List all active developers and pending invitations"
 )
 def list_developers(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_superuser)
 ):
     """
-    Returns all registered users who have developer/superuser privileges.
+    Returns active team members (Super Admin, Admin, Member) and pending invitations.
     Protected: Developer only.
     """
-    devs = db.query(User).filter(User.is_superuser == True).all()
-    return [UserResponse.model_validate(u) for u in devs]
+    primary_owners = [e.strip().lower() for e in settings.DEVELOPER_EMAILS.split(",") if e.strip()]
+    devs = db.query(User).filter(User.is_superuser == True).order_by(User.created_at.desc()).all()
+    
+    results: List[DeveloperMemberItem] = []
+    
+    # 1. Active Joined Developers
+    for u in devs:
+        is_primary = u.email.lower() in primary_owners
+        role = "SUPER_ADMIN" if is_primary else (u.developer_role or "MEMBER")
+        presence = "ONLINE" if ws_manager.is_online(u.email) else "OFFLINE"
+        
+        results.append(DeveloperMemberItem(
+            id=u.id,
+            email=u.email,
+            full_name=u.full_name or u.email.split("@")[0],
+            avatar_url=u.avatar_url,
+            role=role,
+            status="ACCEPTED",
+            presence=presence,
+            is_primary_owner=is_primary,
+            created_at=u.created_at
+        ))
 
-from app.services.email_service import EmailService
+    # 2. Pending Invitations
+    invitations = db.query(DeveloperInvitation).filter(
+        DeveloperInvitation.status == "PENDING"
+    ).order_by(DeveloperInvitation.created_at.desc()).all()
+
+    for inv in invitations:
+        # If user already accepted or active, skip
+        if any(d.email.lower() == inv.email.lower() for d in results):
+            continue
+        results.append(DeveloperMemberItem(
+            id=None,
+            invitation_id=inv.id,
+            email=inv.email,
+            full_name=inv.email.split("@")[0],
+            avatar_url=None,
+            role=inv.role,
+            status="PENDING",
+            presence="PENDING",
+            is_primary_owner=False,
+            created_at=inv.created_at
+        ))
+
+    return results
+
+
+@router.post(
+    "/invite-developer",
+    response_model=AuthMessageResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Send tokenized developer invitation link with role"
+)
+def invite_developer(
+    req: InviteDeveloperRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_superuser)
+):
+    """
+    Creates a pending invitation with a secure token and sends an email with the join link.
+    RBAC Rules:
+    - Super Admin can invite 'ADMIN' and 'MEMBER'.
+    - Admin can only invite 'MEMBER'.
+    - Member cannot invite.
+    """
+    caller_role = get_user_role(current_user)
+    target_role = req.role.upper() if req.role else "MEMBER"
+
+    if caller_role == "MEMBER":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission Denied: Standard Members cannot invite team members."
+        )
+
+    if caller_role == "ADMIN" and target_role == "ADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission Denied: Only Super Admins can invite new Admins."
+        )
+
+    clean_email = req.email.strip().lower()
+    primary_owners = [e.strip().lower() for e in settings.DEVELOPER_EMAILS.split(",") if e.strip()]
+    if clean_email in primary_owners:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is already the Super Admin / Primary Owner."
+        )
+
+    # Invalidate prior pending invitations for this email
+    existing_invites = db.query(DeveloperInvitation).filter(
+        DeveloperInvitation.email == clean_email,
+        DeveloperInvitation.status == "PENDING"
+    ).all()
+    for ex in existing_invites:
+        ex.status = "EXPIRED"
+
+    # Generate secure random invitation token
+    invite_token = secrets.token_urlsafe(32)
+    invitation = DeveloperInvitation(
+        email=clean_email,
+        token=invite_token,
+        role=target_role,
+        invited_by_email=current_user.email,
+        status="PENDING"
+    )
+    db.add(invitation)
+    db.commit()
+    db.refresh(invitation)
+
+    # Send invitation email with join link
+    background_tasks.add_task(
+        EmailService.send_developer_invite_email,
+        to_email=clean_email,
+        inviter_email=current_user.email,
+        inviter_name=current_user.full_name,
+        role=target_role,
+        invite_token=invite_token
+    )
+
+    # Broadcast live WebSocket event
+    background_tasks.add_task(
+        ws_manager.broadcast_event,
+        "DEVELOPER_INVITED",
+        {
+            "id": None,
+            "invitation_id": invitation.id,
+            "email": clean_email,
+            "full_name": clean_email.split("@")[0],
+            "role": target_role,
+            "status": "PENDING",
+            "presence": "PENDING",
+            "created_at": invitation.created_at.isoformat() if invitation.created_at else None,
+            "invited_by": current_user.email
+        }
+    )
+
+    role_label = "Admin" if target_role == "ADMIN" else "Developer Member"
+    return AuthMessageResponse(
+        message=f"Invitation link sent to {clean_email} as {role_label}!"
+    )
+
+
+@router.get(
+    "/verify-invite",
+    response_model=VerifyInviteResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Verify invitation token before acceptance"
+)
+def verify_invite(
+    token: str = Query(..., description="Invitation token"),
+    db: Session = Depends(get_db)
+):
+    invitation = db.query(DeveloperInvitation).filter(
+        DeveloperInvitation.token == token,
+        DeveloperInvitation.status == "PENDING"
+    ).first()
+
+    if not invitation or invitation.is_expired():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invitation link is invalid, expired, or has already been accepted."
+        )
+
+    return VerifyInviteResponse(
+        email=invitation.email,
+        role=invitation.role,
+        invited_by_email=invitation.invited_by_email,
+        is_valid=True,
+        expires_at=invitation.expires_at
+    )
+
+
+@router.post(
+    "/accept-invite",
+    response_model=AuthMessageResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Accept developer team invitation and activate privileges"
+)
+def accept_invite(
+    req: AcceptInviteRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    invitation = db.query(DeveloperInvitation).filter(
+        DeveloperInvitation.token == req.token,
+        DeveloperInvitation.status == "PENDING"
+    ).first()
+
+    if not invitation or invitation.is_expired():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invitation is invalid, expired, or already used."
+        )
+
+    if invitation.email.lower() != current_user.email.lower():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"This invitation was issued for '{invitation.email}'. You are signed in as '{current_user.email}'."
+        )
+
+    # Activate developer privileges
+    current_user.is_superuser = True
+    current_user.developer_role = invitation.role
+    invitation.status = "ACCEPTED"
+    invitation.accepted_at = datetime.now(ZoneInfo("Asia/Kolkata"))
+    db.commit()
+
+    # Real-time WebSocket broadcast
+    background_tasks.add_task(
+        ws_manager.broadcast_event,
+        "DEVELOPER_JOINED",
+        {
+            "id": current_user.id,
+            "email": current_user.email,
+            "full_name": current_user.full_name,
+            "role": current_user.developer_role,
+            "status": "ACCEPTED",
+            "presence": "ONLINE" if ws_manager.is_online(current_user.email) else "OFFLINE",
+            "created_at": current_user.created_at.isoformat() if current_user.created_at else None
+        }
+    )
+
+    role_label = "Admin" if current_user.developer_role == "ADMIN" else "Developer Member"
+    return AuthMessageResponse(
+        message=f"Welcome! You have successfully joined the team as {role_label}."
+    )
+
 
 @router.post(
     "/manage-developer",
     response_model=AuthMessageResponse,
     status_code=status.HTTP_200_OK,
-    summary="Grant or revoke developer/superuser access by email"
+    summary="Revoke developer access or cancel pending invitation"
 )
 def manage_developer(
     req: ManageDeveloperRequest,
@@ -199,59 +431,82 @@ def manage_developer(
     current_user: User = Depends(get_current_superuser)
 ):
     """
-    Grants or revokes developer/superuser privileges for a user by email.
-    If granting access to a new email not yet registered, automatically pre-provisions
-    the account so they have developer privileges as soon as they sign in.
-    Dispatches a richly formatted email invitation in background.
-    Protected: Developer only.
+    Revokes developer privileges or cancels pending invitations with strict RBAC protection:
+    - Super Admin cannot be revoked or demoted by anyone.
+    - Admins cannot revoke Super Admin or other Admins.
+    - Members cannot revoke anyone.
     """
-    clean_email = req.email.strip().lower()
-    target_user = db.query(User).filter(User.email == clean_email).first()
-    
-    if not target_user:
-        if req.is_developer:
-            # Automatically pre-authorize developer account
-            name_guess = clean_email.split('@')[0].replace('.', ' ').title()
-            target_user = User(
-                email=clean_email,
-                full_name=f"{name_guess} (Developer)",
-                is_verified=True,
-                is_superuser=True,
-                auth_provider="google"
-            )
-            db.add(target_user)
-            db.commit()
-            db.refresh(target_user)
-
-            # Send developer invite email
-            background_tasks.add_task(
-                EmailService.send_developer_invite_email,
-                to_email=clean_email,
-                inviter_email=current_user.email,
-                inviter_name=current_user.full_name
-            )
-
-            return AuthMessageResponse(
-                message=f"Developer access granted and invite email dispatched to {clean_email}!"
-            )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"User with email '{req.email}' not found."
-            )
-
-    target_user.is_superuser = req.is_developer
-    db.commit()
-
-    if req.is_developer:
-        background_tasks.add_task(
-            EmailService.send_developer_invite_email,
-            to_email=clean_email,
-            inviter_email=current_user.email,
-            inviter_name=current_user.full_name
+    caller_role = get_user_role(current_user)
+    if caller_role == "MEMBER":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission Denied: Standard Members cannot manage team access."
         )
-    
-    action = "granted to and invitation dispatched to" if req.is_developer else "revoked from"
+
+    clean_email = req.email.strip().lower()
+    primary_owners = [e.strip().lower() for e in settings.DEVELOPER_EMAILS.split(",") if e.strip()]
+
+    # Security rule: Super Admin cannot be revoked
+    if clean_email in primary_owners:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Security Policy: Cannot revoke privileges from Super Admin / Owner '{clean_email}'."
+        )
+
+    # 1. Check if user is active developer
+    target_user = db.query(User).filter(User.email == clean_email).first()
+    if target_user and target_user.is_superuser:
+        target_role = get_user_role(target_user)
+        if caller_role == "ADMIN" and target_role in ("SUPER_ADMIN", "ADMIN"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Permission Denied: Admins cannot revoke Super Admin or other Admins."
+            )
+
+        if not req.is_developer:
+            target_user.is_superuser = False
+            target_user.developer_role = None
+            db.commit()
+
+            background_tasks.add_task(
+                ws_manager.broadcast_event,
+                "DEVELOPER_REVOKED",
+                {
+                    "email": clean_email,
+                    "revoked_by": current_user.email
+                }
+            )
+            return AuthMessageResponse(
+                message=f"Developer access successfully revoked from {clean_email}."
+            )
+
+    # 2. Check if there's a pending invitation to cancel
+    pending_inv = db.query(DeveloperInvitation).filter(
+        DeveloperInvitation.email == clean_email,
+        DeveloperInvitation.status == "PENDING"
+    ).first()
+
+    if pending_inv:
+        if caller_role == "ADMIN" and pending_inv.role == "ADMIN":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Permission Denied: Admins cannot cancel Admin invitations."
+            )
+        pending_inv.status = "REVOKED"
+        db.commit()
+
+        background_tasks.add_task(
+            ws_manager.broadcast_event,
+            "DEVELOPER_REVOKED",
+            {
+                "email": clean_email,
+                "revoked_by": current_user.email
+            }
+        )
+        return AuthMessageResponse(
+            message=f"Pending invitation for {clean_email} has been cancelled."
+        )
+
     return AuthMessageResponse(
-        message=f"Developer access successfully {action} {target_user.email}."
+        message=f"No active developer access or pending invitation found for {clean_email}."
     )

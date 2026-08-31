@@ -72,6 +72,9 @@ class UserResponse(BaseModel):
     is_verified: bool
     is_active: bool
     is_superuser: bool = False
+    is_primary_owner: bool = False
+    developer_role: Optional[str] = None  # "SUPER_ADMIN", "ADMIN", "MEMBER"
+    presence: Optional[str] = "OFFLINE"
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -97,3 +100,30 @@ class TokenResponse(BaseModel):
 class ManageDeveloperRequest(BaseModel):
     email: EmailStr
     is_developer: bool = True
+    role: Optional[str] = "MEMBER"
+
+class InviteDeveloperRequest(BaseModel):
+    email: EmailStr
+    role: str = "MEMBER"  # "ADMIN", "MEMBER"
+
+class VerifyInviteResponse(BaseModel):
+    email: str
+    role: str
+    invited_by_email: str
+    is_valid: bool
+    expires_at: datetime
+
+class AcceptInviteRequest(BaseModel):
+    token: str
+
+class DeveloperMemberItem(BaseModel):
+    id: Optional[int] = None
+    email: str
+    full_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    role: str = "MEMBER"  # "SUPER_ADMIN", "ADMIN", "MEMBER"
+    status: str = "ACCEPTED"  # "ACCEPTED", "PENDING"
+    presence: str = "OFFLINE"  # "ONLINE", "OFFLINE", "PENDING"
+    is_primary_owner: bool = False
+    created_at: Optional[datetime] = None
+    invitation_id: Optional[int] = None

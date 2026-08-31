@@ -215,30 +215,37 @@ The Noesis Team
     async def send_developer_invite_email(
         to_email: str,
         inviter_email: str,
-        inviter_name: Optional[str] = None
+        inviter_name: Optional[str] = None,
+        role: str = "MEMBER",
+        invite_token: Optional[str] = None
     ) -> bool:
         """
-        Sends a beautifully formatted Developer Team Invitation email when developer privileges are granted.
+        Sends a beautifully formatted Developer Team Invitation email with a secure tokenized join link.
         """
-        subject = "You've been invited as a Developer to Noesis RAG Studio"
+        role_label = "Admin" if role.upper() == "ADMIN" else "Developer Member"
+        subject = f"Invitation: Join Noesis Developer Team as {role_label}"
         display_inviter = inviter_name or inviter_email
-        eval_url = f"{settings.FRONTEND_URL}/developer/evaluation"
         display_name = to_email.split("@")[0]
+        
+        if invite_token:
+            accept_url = f"{settings.FRONTEND_URL}/accept-invite?token={invite_token}"
+        else:
+            accept_url = f"{settings.FRONTEND_URL}/developer/evaluation"
 
         body_text = f"""Hello {display_name},
 
-You have been granted Developer & Superuser privileges on the Noesis RAG Studio platform by {display_inviter} ({inviter_email}).
+You have been invited to join the Noesis Developer Team as {role_label} by {display_inviter} ({inviter_email}).
 
-As an authorized Developer, you have full access to:
+To accept your invitation and activate your developer privileges, please click the secure link below:
+{accept_url}
+
+This invitation link is valid for 7 days.
+
+As an authorized {role_label}, you will have access to:
 - RAGAs Automated Benchmark & Quality Evaluation Suite
 - Granular Atomic Claim Verification Audits & Hallucination Diagnostics
 - Real-Time Retrieval, Reranking & LangGraph Pipeline Telemetry
-- Team Access & Developer Privilege Management
-
-You can access the Developer Studio immediately:
-{eval_url}
-
-Sign in using your Google account or email ({to_email}) to get started.
+{"- Team Access & Member Invitation Management" if role.upper() == "ADMIN" else "- Benchmark Execution & Test Case Inspection"}
 
 Best regards,
 The Noesis Platform Team
@@ -260,59 +267,54 @@ The Noesis Platform Team
                 .inviter-card {{ background: #262626; border: 1px solid #3a3a3a; border-radius: 10px; padding: 14px 16px; margin-bottom: 22px; display: flex; align-items: center; gap: 10px; }}
                 .inviter-avatar {{ width: 34px; height: 34px; border-radius: 50%; background: #6366f1; color: #ffffff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }}
                 .inviter-text {{ font-size: 13px; color: #d4d4d4; line-height: 1.4; }}
-                .inviter-email {{ color: #a5b4fc; font-weight: 600; }}
                 .feature-list {{ margin: 20px 0; }}
                 .feature-item {{ background: #262626; border: 1px solid #333333; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }}
                 .feature-title {{ font-size: 14px; font-weight: 600; color: #ffffff; margin: 0 0 3px 0; }}
                 .feature-desc {{ font-size: 12px; color: #a3a3a3; margin: 0; line-height: 1.4; }}
-                .cta-box {{ text-align: center; margin: 30px 0 10px 0; }}
-                .cta-btn {{ display: inline-block; background: #6366f1; color: #ffffff !important; font-weight: 600; font-size: 14px; padding: 13px 28px; border-radius: 10px; text-decoration: none; box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4); }}
+                .cta-box {{ text-align: center; margin: 30px 0 16px 0; }}
+                .cta-btn {{ display: inline-block; background: #6366f1; color: #ffffff !important; font-weight: 600; font-size: 15px; padding: 14px 32px; border-radius: 10px; text-decoration: none; box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4); }}
                 .cta-btn:hover {{ background: #4f46e5; }}
+                .expiry-note {{ font-size: 12px; color: #888888; text-align: center; margin-top: 10px; }}
                 .footer {{ background: #171717; padding: 18px 24px; text-align: center; border-top: 1px solid #2a2a2a; font-size: 11px; color: #737373; }}
             </style>
         </head>
         <body>
             <div class="container">
                 <div class="header">
-                    <span class="badge">DEVELOPER ACCESS GRANTED</span>
-                    <h1>Welcome to the Developer Team</h1>
-                    <p>Noesis Enterprise Agentic RAG Platform</p>
+                    <span class="badge">{role_label.upper()} INVITATION</span>
+                    <h1>Join Noesis Developer Team</h1>
+                    <p>Enterprise Agentic RAG Platform</p>
                 </div>
                 <div class="content">
                     <div class="inviter-card">
                         <div class="inviter-avatar">{display_inviter[0].upper()}</div>
                         <div class="inviter-text">
-                            <strong>{display_inviter}</strong> has invited you to the developer team with full administrative and benchmarking privileges.
+                            <strong>{display_inviter}</strong> has invited you to join the team as <strong>{role_label}</strong>.
                         </div>
                     </div>
 
                     <p style="font-size: 14px; color: #cccccc; line-height: 1.5; margin-bottom: 16px;">
-                        Your account <strong>{to_email}</strong> is now pre-authorized for Developer Mode. You have unlocked access to deep diagnostics and RAG auditing tools:
+                        Click below to accept your invitation and unlock your developer workspace:
                     </p>
+
+                    <div class="cta-box">
+                        <a href="{accept_url}" class="cta-btn">Accept & Join as {role_label} →</a>
+                        <p class="expiry-note">This invitation link expires in 7 days.</p>
+                    </div>
 
                     <div class="feature-list">
                         <div class="feature-item">
                             <div class="feature-title">🛡️ RAGAs Automated Quality Benchmark</div>
-                            <div class="feature-desc">Dynamically test multi-document retrieval with Faithfulness, Answer Relevance, and Context Precision scorecards.</div>
+                            <div class="feature-desc">Dynamically evaluate Faithfulness, Answer Relevance, and Context Precision scorecards.</div>
                         </div>
-
                         <div class="feature-item">
                             <div class="feature-title">🔬 Atomic Claim Verification Audits</div>
                             <div class="feature-desc">Inspect sentence-level groundedness checks and zero-tolerance hallucination detection.</div>
                         </div>
-
-                        <div class="feature-item">
-                            <div class="feature-title">⚡ Multi-Modal Ingestion & Telemetry</div>
-                            <div class="feature-desc">Monitor LangGraph stateful execution nodes, FTS hybrid searches, and cross-attention reranking.</div>
-                        </div>
-                    </div>
-
-                    <div class="cta-box">
-                        <a href="{eval_url}" class="cta-btn">Access Developer Suite →</a>
                     </div>
                 </div>
                 <div class="footer">
-                    <p>Signed in with {to_email} to access developer features. © Noesis RAG Platform.</p>
+                    <p>Sent to {to_email}. © Noesis RAG Platform.</p>
                 </div>
             </div>
         </body>
@@ -321,7 +323,7 @@ The Noesis Platform Team
 
         # Log clearly for development
         logger.info(f"============================================================")
-        logger.info(f" [DEV DEVELOPER INVITE EMAIL] Sent to: {to_email} | Invited by: {inviter_email}")
+        logger.info(f" [DEV DEVELOPER INVITE EMAIL] Sent to: {to_email} | Role: {role_label} | URL: {accept_url}")
         logger.info(f"============================================================")
 
         # Dispatch via SMTP if configured
