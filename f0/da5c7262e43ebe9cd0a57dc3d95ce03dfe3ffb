@@ -1,0 +1,28 @@
+README.md
+  h_6bfb1d88d0b1fe 113,115-118
+app/api/routes/auth.py
+  h_6bfb1d88d0b1fe 3,138,289,291,297-298,304,327,334,354-356,359,388-396,399,402,406
+app/core/security.py
+  h_6bfb1d88d0b1fe 75-77,80-82,87,99-112,116,120,129-139
+app/main.py
+  h_6bfb1d88d0b1fe 83
+app/models/developer_invitation.py
+  h_6bfb1d88d0b1fe 22
+app/services/auth_service.py
+  h_6bfb1d88d0b1fe 230,237-238
+app/services/email_service.py
+  h_6bfb1d88d0b1fe 11,13,19,21,23-26,29-68,70-96,134,141,143-147,149,152,155-222,264,267-268,284-286,298-363,366-490
+app/services/google_auth_service.py
+  h_6bfb1d88d0b1fe 10,16-21,27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f0da5c7262e43ebe9cd0a57dc3d95ce03dfe3ffb",
+  "prompts": {},
+  "humans": {
+    "h_6bfb1d88d0b1fe": {
+      "author": "ShubhamPrajapati1402 <scprajapati14@gmail.com>"
+    }
+  }
+}
