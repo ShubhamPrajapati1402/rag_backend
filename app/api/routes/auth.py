@@ -53,9 +53,9 @@ async def signup(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    user, message = await AuthService.register_user(db, signup_data, background_tasks)
+    user = await AuthService.signup(db, signup_data, background_tasks)
     return AuthMessageResponse(
-        message=message,
+        message="Account registered. Please enter the verification OTP sent to your email.",
         user=UserResponse.model_validate(user) if user else None,
         email=signup_data.email
     )
@@ -73,12 +73,12 @@ async def verify_otp(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    user, access_token, message = await AuthService.verify_user_otp(
-        db, otp_data.email, otp_data.otp_code, background_tasks
+    user, access_token = await AuthService.verify_signup_otp(
+        db, otp_data, background_tasks
     )
     set_auth_cookie(response, access_token)
     return TokenResponse(
-        message=message,
+        message="Email verified successfully. Welcome to Noesis!",
         user=UserResponse.model_validate(user),
         access_token=access_token
     )
@@ -95,8 +95,11 @@ async def resend_otp(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    message = await AuthService.resend_otp(db, resend_data.email, background_tasks)
-    return AuthMessageResponse(message=message, email=resend_data.email)
+    await AuthService.resend_signup_otp(db, resend_data, background_tasks)
+    return AuthMessageResponse(
+        message="A new 6-digit verification code has been dispatched to your email.",
+        email=resend_data.email
+    )
 
 
 @router.post(
@@ -110,12 +113,10 @@ async def login(
     response: Response,
     db: Session = Depends(get_db)
 ):
-    user, access_token, message = await AuthService.authenticate_user(
-        db, login_data.email, login_data.password
-    )
+    user, access_token = await AuthService.login(db, login_data)
     set_auth_cookie(response, access_token)
     return TokenResponse(
-        message=message,
+        message="Authentication successful.",
         user=UserResponse.model_validate(user),
         access_token=access_token
     )
@@ -133,12 +134,12 @@ async def google_auth(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
-    user, access_token, message = await AuthService.authenticate_google(
-        db, google_data.credential, background_tasks
+    user, access_token = await AuthService.authenticate_google(
+        db, google_data, background_tasks
     )
     set_auth_cookie(response, access_token)
     return TokenResponse(
-        message=message,
+        message="Google authentication successful.",
         user=UserResponse.model_validate(user),
         access_token=access_token
     )
