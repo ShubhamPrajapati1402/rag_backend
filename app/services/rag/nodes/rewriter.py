@@ -2,7 +2,7 @@ import json
 from loguru import logger
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.schemas.rag_state import RAGState
-from app.services.rag.llm import get_groq_llm
+from app.services.rag.llm import get_groq_llm, extract_text_content
 from app.services.rag.prompts import QUERY_REWRITER_SYSTEM_PROMPT
 
 async def rewriter_node(state: RAGState) -> dict:
@@ -44,7 +44,7 @@ async def rewriter_node(state: RAGState) -> dict:
             HumanMessage(content=prompt)
         ])
         
-        content = response.content.strip()
+        content = extract_text_content(response.content).strip()
         if "{" in content and "}" in content:
             json_str = content[content.find("{"):content.rfind("}")+1]
             data = json.loads(json_str)

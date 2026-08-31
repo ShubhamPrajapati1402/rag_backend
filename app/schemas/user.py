@@ -71,6 +71,7 @@ class UserResponse(BaseModel):
     auth_provider: str
     is_verified: bool
     is_active: bool
+    is_superuser: bool = False
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -92,3 +93,7 @@ class TokenResponse(BaseModel):
     user: UserResponse
     access_token: Optional[str] = None
     token_type: Optional[str] = "bearer"
+
+class ManageDeveloperRequest(BaseModel):
+    email: EmailStr
+    is_developer: bool = True

@@ -3,7 +3,7 @@ from typing import List, Dict, Any
 from loguru import logger
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.schemas.rag_state import RAGState, Citation
-from app.services.rag.llm import get_groq_llm
+from app.services.rag.llm import get_groq_llm, extract_text_content
 from app.services.rag.prompts import (
     GENERATOR_SYSTEM_PROMPT,
     DIRECT_GENERATOR_SYSTEM_PROMPT
@@ -67,7 +67,7 @@ async def rag_generator_node(state: RAGState) -> dict:
         HumanMessage(content=prompt)
     ])
 
-    answer = response.content.strip()
+    answer = extract_text_content(response.content).strip()
     # Clean up duplicate markdown URLs like [https://url](https://url)
     answer = re.sub(r'\[(https?://[^\s\]]+)\]\(\1\)', r'\1', answer)
     answer = re.sub(r'\[((?:www\.)?[^\s\]]+)\]\((?:https?://)?\1\)', r'https://\1', answer)
@@ -100,7 +100,7 @@ async def direct_generator_node(state: RAGState) -> dict:
         HumanMessage(content=f"{history_text}User: {question}")
     ])
 
-    return {"generation": response.content.strip(), "citations": []}
+    return {"generation": extract_text_content(response.content).strip(), "citations": []}
 
 
 from app.services.rag.prompts import (
@@ -122,4 +122,4 @@ async def fallback_generator_node(state: RAGState) -> dict:
         HumanMessage(content=f"User Question: {question}")
     ])
 
-    return {"generation": response.content.strip(), "citations": []}
+    return {"generation": extract_text_content(response.content).strip(), "citations": []}

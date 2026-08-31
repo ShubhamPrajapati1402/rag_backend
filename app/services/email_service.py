@@ -211,3 +211,144 @@ The Noesis Team
 
         return True
 
+    @staticmethod
+    async def send_developer_invite_email(
+        to_email: str,
+        inviter_email: str,
+        inviter_name: Optional[str] = None
+    ) -> bool:
+        """
+        Sends a beautifully formatted Developer Team Invitation email when developer privileges are granted.
+        """
+        subject = "You've been invited as a Developer to Noesis RAG Studio"
+        display_inviter = inviter_name or inviter_email
+        eval_url = f"{settings.FRONTEND_URL}/developer/evaluation"
+        display_name = to_email.split("@")[0]
+
+        body_text = f"""Hello {display_name},
+
+You have been granted Developer & Superuser privileges on the Noesis RAG Studio platform by {display_inviter} ({inviter_email}).
+
+As an authorized Developer, you have full access to:
+- RAGAs Automated Benchmark & Quality Evaluation Suite
+- Granular Atomic Claim Verification Audits & Hallucination Diagnostics
+- Real-Time Retrieval, Reranking & LangGraph Pipeline Telemetry
+- Team Access & Developer Privilege Management
+
+You can access the Developer Studio immediately:
+{eval_url}
+
+Sign in using your Google account or email ({to_email}) to get started.
+
+Best regards,
+The Noesis Platform Team
+"""
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #121212; color: #f1f5f9; margin: 0; padding: 24px; }}
+                .container {{ max-width: 600px; margin: 0 auto; background: #1e1e1e; border-radius: 14px; overflow: hidden; border: 1px solid #333333; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4); }}
+                .header {{ background: linear-gradient(135deg, #4f46e5 0%, #6366f1 50%, #8b5cf6 100%); padding: 32px 24px; text-align: center; }}
+                .badge {{ display: inline-block; background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(4px); color: #ffffff; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; padding: 4px 10px; border-radius: 9999px; text-transform: uppercase; margin-bottom: 10px; }}
+                .header h1 {{ margin: 0; font-size: 26px; color: #ffffff; letter-spacing: -0.5px; font-weight: 700; }}
+                .header p {{ margin: 8px 0 0 0; color: #e0e7ff; font-size: 14px; }}
+                .content {{ padding: 30px 24px; }}
+                .inviter-card {{ background: #262626; border: 1px solid #3a3a3a; border-radius: 10px; padding: 14px 16px; margin-bottom: 22px; display: flex; align-items: center; gap: 10px; }}
+                .inviter-avatar {{ width: 34px; height: 34px; border-radius: 50%; background: #6366f1; color: #ffffff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }}
+                .inviter-text {{ font-size: 13px; color: #d4d4d4; line-height: 1.4; }}
+                .inviter-email {{ color: #a5b4fc; font-weight: 600; }}
+                .feature-list {{ margin: 20px 0; }}
+                .feature-item {{ background: #262626; border: 1px solid #333333; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }}
+                .feature-title {{ font-size: 14px; font-weight: 600; color: #ffffff; margin: 0 0 3px 0; }}
+                .feature-desc {{ font-size: 12px; color: #a3a3a3; margin: 0; line-height: 1.4; }}
+                .cta-box {{ text-align: center; margin: 30px 0 10px 0; }}
+                .cta-btn {{ display: inline-block; background: #6366f1; color: #ffffff !important; font-weight: 600; font-size: 14px; padding: 13px 28px; border-radius: 10px; text-decoration: none; box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4); }}
+                .cta-btn:hover {{ background: #4f46e5; }}
+                .footer {{ background: #171717; padding: 18px 24px; text-align: center; border-top: 1px solid #2a2a2a; font-size: 11px; color: #737373; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <span class="badge">DEVELOPER ACCESS GRANTED</span>
+                    <h1>Welcome to the Developer Team</h1>
+                    <p>Noesis Enterprise Agentic RAG Platform</p>
+                </div>
+                <div class="content">
+                    <div class="inviter-card">
+                        <div class="inviter-avatar">{display_inviter[0].upper()}</div>
+                        <div class="inviter-text">
+                            <strong>{display_inviter}</strong> has invited you to the developer team with full administrative and benchmarking privileges.
+                        </div>
+                    </div>
+
+                    <p style="font-size: 14px; color: #cccccc; line-height: 1.5; margin-bottom: 16px;">
+                        Your account <strong>{to_email}</strong> is now pre-authorized for Developer Mode. You have unlocked access to deep diagnostics and RAG auditing tools:
+                    </p>
+
+                    <div class="feature-list">
+                        <div class="feature-item">
+                            <div class="feature-title">🛡️ RAGAs Automated Quality Benchmark</div>
+                            <div class="feature-desc">Dynamically test multi-document retrieval with Faithfulness, Answer Relevance, and Context Precision scorecards.</div>
+                        </div>
+
+                        <div class="feature-item">
+                            <div class="feature-title">🔬 Atomic Claim Verification Audits</div>
+                            <div class="feature-desc">Inspect sentence-level groundedness checks and zero-tolerance hallucination detection.</div>
+                        </div>
+
+                        <div class="feature-item">
+                            <div class="feature-title">⚡ Multi-Modal Ingestion & Telemetry</div>
+                            <div class="feature-desc">Monitor LangGraph stateful execution nodes, FTS hybrid searches, and cross-attention reranking.</div>
+                        </div>
+                    </div>
+
+                    <div class="cta-box">
+                        <a href="{eval_url}" class="cta-btn">Access Developer Suite →</a>
+                    </div>
+                </div>
+                <div class="footer">
+                    <p>Signed in with {to_email} to access developer features. © Noesis RAG Platform.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        # Log clearly for development
+        logger.info(f"============================================================")
+        logger.info(f" [DEV DEVELOPER INVITE EMAIL] Sent to: {to_email} | Invited by: {inviter_email}")
+        logger.info(f"============================================================")
+
+        # Dispatch via SMTP if configured
+        if settings.SMTP_HOST and settings.SMTP_PORT and settings.SMTP_USER and settings.SMTP_PASSWORD:
+            try:
+                message = EmailMessage()
+                from_addr = settings.EMAILS_FROM_EMAIL or settings.SMTP_USER
+                from_name = settings.EMAILS_FROM_NAME or "Noesis Developer Team"
+                message["From"] = f"{from_name} <{from_addr}>"
+                message["To"] = to_email
+                message["Subject"] = subject
+                message.set_content(body_text)
+                message.add_alternative(html_content, subtype="html")
+
+                await aiosmtplib.send(
+                    message,
+                    hostname=settings.SMTP_HOST,
+                    port=settings.SMTP_PORT,
+                    username=settings.SMTP_USER,
+                    password=settings.SMTP_PASSWORD,
+                    start_tls=True if settings.SMTP_PORT == 587 else False
+                )
+                logger.info(f"Successfully dispatched Developer Invite email via SMTP to {to_email}")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to send developer invite email via SMTP to {to_email}: {e}")
+                return False
+
+        return True
+

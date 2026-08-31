@@ -82,3 +82,16 @@ def get_current_active_user(
             detail="Account is not verified. Please verify your email."
         )
     return current_user
+
+def get_current_superuser(
+    current_user: User = Depends(get_current_active_user)
+) -> User:
+    """
+    Ensures that the current user has developer/superuser privileges.
+    """
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Developer/Admin access required."
+        )
+    return current_user

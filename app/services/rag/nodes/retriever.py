@@ -6,7 +6,7 @@ from app.models.document import Document, DocumentChunk, DocumentStatus
 from app.schemas.rag_state import RAGState
 from app.services.embeddings import get_embeddings_model
 
-def retriever_node(state: RAGState) -> dict:
+async def retriever_node(state: RAGState) -> dict:
     """
     Hybrid Retriever Node:
     Performs dual-engine parallel retrieval combining:
@@ -27,10 +27,11 @@ def retriever_node(state: RAGState) -> dict:
         logger.info(f"[RetrieverNode] Embedding query via Hugging Face: '{query[:60]}...'")
         try:
             embeddings_model = get_embeddings_model()
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(embeddings_model.embed_query, query)
-                query_vector = future.result(timeout=2.5)
+            import asyncio
+            query_vector = await asyncio.wait_for(
+                asyncio.to_thread(embeddings_model.embed_query, query),
+                timeout=2.5
+            )
             RAGCacheService.set_cached_embedding(query, query_vector)
         except Exception as e:
             logger.warning(f"[RetrieverNode] Hugging Face embedding timed out/failed ({e}). Utilizing fast Postgres Full-Text Search (FTS).")
@@ -71,17 +72,22 @@ def retriever_node(state: RAGState) -> dict:
             vector_results = db.execute(vector_stmt).all()
 
         # --- 2. SPARSE FULL-TEXT / BM25 KEYWORD RETRIEVAL ---
-        # Clean query terms for tsquery safely
-        clean_fts_query = " ".join([w for w in query.replace("'", " ").replace('"', ' ').split() if len(w) > 1])
         fts_results = []
-        if clean_fts_query:
-            try:
-                fts_match = func.to_tsvector('english', DocumentChunk.text_content).op('@@')(
-                    func.plainto_tsquery('english', clean_fts_query)
-                )
+        try:
+            import re
+            raw_tokens = [re.sub(r'[^a-zA-Z0-9]', '', w.lower()) for w in query.split()]
+            stopwords = {"what", "which", "when", "where", "how", "why", "who", "whom", "this", "that", "these", "those", "have", "has", "had", "does", "done", "will", "would", "could", "should", "tell", "give", "from", "with", "about", "was", "were", "the", "for", "and", "are"}
+            keywords = [w for w in raw_tokens if len(w) >= 3 and w not in stopwords]
+
+            if keywords:
+                or_query_str = " | ".join(keywords)
+                fts_query = func.to_tsquery('english', or_query_str)
+                fts_match = func.to_tsvector('english', DocumentChunk.text_content).op('@@')(fts_query)
+                # Normalization flag 32 divides the rank by (length of document + 1) to prevent long PDFs from biasing over compact documents
                 fts_rank = func.ts_rank_cd(
                     func.to_tsvector('english', DocumentChunk.text_content),
-                    func.plainto_tsquery('english', clean_fts_query)
+                    fts_query,
+                    32
                 )
                 fts_stmt = (
                     select(
@@ -101,9 +107,9 @@ def retriever_node(state: RAGState) -> dict:
                     .limit(top_k)
                 )
                 fts_results = db.execute(fts_stmt).all()
-            except Exception as fts_err:
-                logger.debug(f"[RetrieverNode] FTS search warning: {fts_err}")
-                fts_results = []
+        except Exception as fts_err:
+            logger.warning(f"[RetrieverNode] FTS keyword search warning: {fts_err}")
+            fts_results = []
 
         # --- 3. RECIPROCAL RANK FUSION (RRF) ---
         chunk_map: Dict[int, Dict[str, Any]] = {}

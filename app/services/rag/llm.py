@@ -5,34 +5,54 @@ from langchain_groq import ChatGroq
 from app.core.config import settings
 from app.services.rag.prompts import TITLE_GENERATION_PROMPT
 
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="langchain_google_genai")
+
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 
 def get_llm(temperature: float = 0.3) -> Any:
     """
-    Returns a unified LLM instance using Google Gemini 2.5 Flash as the primary engine
-    and Groq Llama 20b as fallback, enforcing a temperature of 0.3.
+    Returns a unified LLM instance using Google Gemini 3.6 Flash as the primary engine
+    and Groq (GPT-OSS / Llama) as resilient instant fallback.
     """
     primary = ChatGoogleGenerativeAI(
         model=settings.GEMINI_MODEL_NAME,
         google_api_key=settings.GEMINI_API_KEY,
-        temperature=temperature
+        temperature=temperature,
+        timeout=12.0,
+        max_retries=0
     )
     fallback = ChatGroq(
         groq_api_key=settings.GROQ_API_KEY,
         model_name=settings.GROQ_MODEL_NAME,
-        temperature=temperature
+        temperature=temperature,
+        timeout=12.0,
+        max_retries=2
     )
     return primary.with_fallbacks([fallback])
 
 def get_groq_llm(temperature: float = 0.3, model_name: Optional[str] = None) -> Any:
     """
-    Upgraded proxy return that defaults to Google Gemini with Groq fallback.
+    Proxy return that defaults to Google Gemini with Groq fallback.
     """
     return get_llm(temperature=temperature)
 
+def extract_text_content(content: Any) -> str:
+    """
+    Safely extracts string content from both raw strings and structured message part lists.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join([
+            item.get("text", "") if isinstance(item, dict) else str(item)
+            for item in content
+        ])
+    return str(content)
+
 def _clean_title(raw_title: str, question: str) -> str:
-    title = raw_title.strip()
+    title = extract_text_content(raw_title).strip()
     title = re.sub(r'^Title:\s*', '', title, flags=re.IGNORECASE)
     title = title.strip(' "\'`#*')
     if title.endswith("."):

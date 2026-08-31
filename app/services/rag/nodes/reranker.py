@@ -6,7 +6,7 @@ from loguru import logger
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.schemas.rag_state import RAGState
 from app.core.config import settings
-from app.services.rag.llm import get_groq_llm
+from app.services.rag.llm import get_groq_llm, extract_text_content
 
 LISTWISE_RERANK_PROMPT = """You are an expert information retrieval and cross-attention reranker.
 You will be given a user query and a list of numbered candidate document excerpts.
@@ -89,7 +89,7 @@ async def rerank_with_groq_fallback(query: str, documents: List[Dict[str, Any]])
         HumanMessage(content=prompt)
     ])
 
-    content = response.content.strip()
+    content = extract_text_content(response.content).strip()
     reranked = []
     seen = set()
     
@@ -134,7 +134,7 @@ async def reranker_node(state: RAGState) -> dict:
         logger.info("[RerankerNode] No candidate documents to rerank.")
         return {"documents": []}
 
-    # High-speed rank sort based on RRF and semantic similarity
+    # Initial high-speed rank sort based on RRF and semantic similarity
     sorted_docs = sorted(
         documents,
         key=lambda d: (d.get("rrf_score", 0.0), d.get("similarity_score", 0.0)),
@@ -142,15 +142,24 @@ async def reranker_node(state: RAGState) -> dict:
     )
     final_top_docs = sorted_docs[:target_k]
 
+    # Dynamic cross-attention listwise reranker when candidates come from multiple documents
+    if len(documents) > 1:
+        try:
+            reranked = await rerank_with_groq_fallback(query, sorted_docs[:10])
+            if reranked:
+                final_top_docs = reranked[:target_k]
+        except Exception as rerank_err:
+            logger.warning(f"[RerankerNode] Fast LLM reranker warning: {rerank_err}. Using RRF order.")
+
     logger.info(f"╔══════════════════════════════════════════════════════════════════════════════════════════")
-    logger.info(f"║ [RerankerNode] HYBRID RRF RERANKED {len(documents)} CANDIDATES -> TOP {len(final_top_docs)} CHUNKS ISOLATED (Instant RRF):")
+    logger.info(f"║ [RerankerNode] DYNAMIC RERANKED {len(documents)} CANDIDATES -> TOP {len(final_top_docs)} CHUNKS ISOLATED:")
     for rank, doc in enumerate(final_top_docs, start=1):
         fn = doc.get("filename", "Unknown")
         pg = doc.get("page_number", "N/A")
         rrf = doc.get("rrf_score", 0.0)
         sim = doc.get("similarity_score", 0.0)
         preview = doc.get("text_content", "")[:120].replace("\n", " ").strip()
-        logger.info(f"║ 🎯 Rank #{rank} | ChunkID: {doc.get('chunk_id')} | Page: {pg} | RRF: {rrf} | Sim: {sim}")
+        logger.info(f"║ 🎯 Rank #{rank} | ChunkID: {doc.get('chunk_id')} | File: {fn} | Page: {pg} | Sim: {sim}")
         logger.info(f"║    Preview: \"{preview}...\"")
     logger.info(f"╚══════════════════════════════════════════════════════════════════════════════════════════")
 

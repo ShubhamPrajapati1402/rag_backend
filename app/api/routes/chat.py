@@ -22,7 +22,7 @@ from app.schemas.chat_schemas import (
     CitationSchema
 )
 from app.services.rag.graph import rag_agent_app
-from app.services.rag.llm import generate_chat_title, agenerate_chat_title
+from app.services.rag.llm import generate_chat_title, agenerate_chat_title, extract_text_content
 
 router = APIRouter(prefix="/chat", tags=["Agentic RAG Chat"])
 
@@ -203,9 +203,11 @@ async def stream_chat_message(
                         if current_node in ("rag_generator", "direct_generator", "fallback_generator"):
                             chunk = event.get("data", {}).get("chunk")
                             if chunk and hasattr(chunk, "content") and chunk.content:
-                                token = chunk.content.replace("||", "|\n|")
-                                accumulated_text += token
-                                yield format_sse("token", {"text": token})
+                                text_chunk = extract_text_content(chunk.content)
+                                if text_chunk:
+                                    token = text_chunk.replace("||", "|\n|")
+                                    accumulated_text += token
+                                    yield format_sse("token", {"text": token})
 
             # Send citations if document context was used
             if final_citations:

@@ -5,12 +5,18 @@ from fastapi import HTTPException, status, BackgroundTasks
 
 from app.models.user import User
 from app.schemas.user import UserSignupRequest, UserLoginRequest, OTPVerifyRequest, OTPResendRequest
+from app.core.config import settings
 from app.core.security import get_password_hash, verify_password, create_access_token
 from app.services.otp_service import OTPService
 from app.services.email_service import EmailService
 from app.services.google_auth_service import GoogleAuthService
 
 class AuthService:
+    @staticmethod
+    def _is_bootstrap_developer(email: str) -> bool:
+        dev_emails = [e.strip().lower() for e in settings.DEVELOPER_EMAILS.split(",") if e.strip()]
+        return email.strip().lower() in dev_emails
+
     @staticmethod
     def get_user_by_email(db: Session, email: str) -> Optional[User]:
         return db.query(User).filter(User.email == email.strip().lower()).first()
@@ -102,6 +108,8 @@ class AuthService:
 
         # Activate user in database
         user.is_verified = True
+        if cls._is_bootstrap_developer(user.email):
+            user.is_superuser = True
         db.commit()
         db.refresh(user)
 
@@ -202,6 +210,11 @@ class AuthService:
                 detail="Account is not verified. A new verification code has been sent to your email."
             )
 
+        if cls._is_bootstrap_developer(user.email) and not user.is_superuser:
+            user.is_superuser = True
+            db.commit()
+            db.refresh(user)
+
         token = create_access_token(
             subject=user.id,
             claims={"email": user.email, "auth_provider": user.auth_provider}
@@ -240,6 +253,8 @@ class AuthService:
             if full_name:
                 user.full_name = full_name
             user.auth_provider = "google"
+            if cls._is_bootstrap_developer(user.email) and not user.is_superuser:
+                user.is_superuser = True
             
             # Keep user.hashed_password completely intact so the user can login with either method!
             db.commit()
@@ -254,7 +269,8 @@ class AuthService:
                 avatar_url=avatar_url,
                 auth_provider="google",
                 is_verified=True,
-                is_active=True
+                is_active=True,
+                is_superuser=cls._is_bootstrap_developer(email)
             )
             db.add(user)
             db.commit()
