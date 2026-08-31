@@ -1,0 +1,14 @@
+app/services/email_service.py
+  h_6bfb1d88d0b1fe 266-267
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "11037465480c9183b6927ec4b9652d131448b67c",
+  "prompts": {},
+  "humans": {
+    "h_6bfb1d88d0b1fe": {
+      "author": "ShubhamPrajapati1402 <scprajapati14@gmail.com>"
+    }
+  }
+}
