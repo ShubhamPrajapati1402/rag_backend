@@ -263,8 +263,8 @@ The Noesis Platform Team
         """
         Sends an interactive, visually stunning Developer Team Invitation email with a vibrant purple header and interactive layout.
         """
-        role_label = "Admin" if role.upper() == "ADMIN" else "Developer Member"
-        role_badge = "🛡️ ADMIN INVITATION" if role.upper() == "ADMIN" else "💻 DEVELOPER INVITATION"
+        role_label = "Admin" if role.upper() == "ADMIN" else "Member"
+        role_badge = "🛡️ ADMIN INVITATION" if role.upper() == "ADMIN" else "💻 MEMBER INVITATION"
         subject = f"You've been invited as {role_label} to Noesis RAG Studio"
         display_inviter = inviter_name or inviter_email
         display_name = to_email.split("@")[0]
