@@ -1,0 +1,20 @@
+.env.example
+  h_6bfb1d88d0b1fe 2,4-9,12,14-15,59-62,72,93,95,97-100,103
+README.md
+  h_6bfb1d88d0b1fe 1,3,13,18,20-22,26,31-38,61-69,72,76,80,86-87,90,95-98,105,107-111,113-117,121-126,130-138,142-150,154-157,159,161-163,166-179,182-185,187-188,190,192,195-200,204,207-218,221-224,226,228-231,234-237
+app/api/routes/auth.py
+  h_6bfb1d88d0b1fe 56,58,76-77,81,98-102,116,119,137-138,142
+requirements.txt
+  h_6bfb1d88d0b1fe 5,8,18,23,26-28,31,48,56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "47eb8512bca370533dbc89324bbd1613c0f832ef",
+  "prompts": {},
+  "humans": {
+    "h_6bfb1d88d0b1fe": {
+      "author": "ShubhamPrajapati1402 <scprajapati14@gmail.com>"
+    }
+  }
+}
