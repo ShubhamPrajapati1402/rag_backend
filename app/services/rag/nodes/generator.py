@@ -68,6 +68,9 @@ async def rag_generator_node(state: RAGState) -> dict:
     ])
 
     answer = response.content.strip()
+    # Clean up duplicate markdown URLs like [https://url](https://url)
+    answer = re.sub(r'\[(https?://[^\s\]]+)\]\(\1\)', r'\1', answer)
+    answer = re.sub(r'\[((?:www\.)?[^\s\]]+)\]\((?:https?://)?\1\)', r'https://\1', answer)
     # Ensure Markdown table rows have proper line breaks if squashed
     answer = re.sub(r'\|\s*\|(?=[-\s\w*#])', '|\n|', answer)
     return {"generation": answer, "citations": citations}

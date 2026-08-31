@@ -122,45 +122,35 @@ async def rerank_with_groq_fallback(query: str, documents: List[Dict[str, Any]])
 
 async def reranker_node(state: RAGState) -> dict:
     """
-    Takes up to 20 candidate chunks from Stage 1 retrieval, applies Cross-Encoder scoring,
-    and isolates the top 5 highest-precision chunks.
+    Reranker Node:
+    Takes candidate chunks from Hybrid Search (BM25 + pgvector) and isolates the top 5
+    highest-precision chunks based on Reciprocal Rank Fusion (RRF) scores in 0ms.
     """
     documents = state.get("documents", [])
     query = state.get("rewritten_query") or state.get("question", "")
-    target_k = 7
+    target_k = 5
 
     if not documents:
         logger.info("[RerankerNode] No candidate documents to rerank.")
         return {"documents": []}
 
-    logger.info(f"[RerankerNode] Cross-Encoder Reranking {len(documents)} candidate chunks for query: '{query[:60]}...'")
+    # High-speed rank sort based on RRF and semantic similarity
+    sorted_docs = sorted(
+        documents,
+        key=lambda d: (d.get("rrf_score", 0.0), d.get("similarity_score", 0.0)),
+        reverse=True
+    )
+    final_top_docs = sorted_docs[:target_k]
 
-    reranked_docs: List[Dict[str, Any]] = []
-    engine_used = settings.HUGGINGFACE_RERANKER_MODEL
-
-    try:
-        reranked_docs = await rerank_with_hf(query, documents)
-    except Exception as e:
-        logger.warning(f"[RerankerNode] Hugging Face cross-encoder failed ({e}). Falling back to Groq listwise reranker.")
-        engine_used = "Groq Flash Listwise"
-        try:
-            reranked_docs = await rerank_with_groq_fallback(query, documents)
-        except Exception as fallback_err:
-            logger.error(f"[RerankerNode] Both reranking engines failed: {fallback_err}. Using raw vector order.")
-            reranked_docs = documents
-
-    final_top_docs = reranked_docs[:target_k]
-
-    # Output structured terminal telemetry
     logger.info(f"╔══════════════════════════════════════════════════════════════════════════════════════════")
-    logger.info(f"║ [RerankerNode] RERANKED {len(documents)} CANDIDATES -> TOP {len(final_top_docs)} CHUNKS ISOLATED ({engine_used}):")
+    logger.info(f"║ [RerankerNode] HYBRID RRF RERANKED {len(documents)} CANDIDATES -> TOP {len(final_top_docs)} CHUNKS ISOLATED (Instant RRF):")
     for rank, doc in enumerate(final_top_docs, start=1):
         fn = doc.get("filename", "Unknown")
         pg = doc.get("page_number", "N/A")
-        orig_rank = doc.get("original_rank", "N/A")
-        score = doc.get("rerank_score", "N/A")
+        rrf = doc.get("rrf_score", 0.0)
+        sim = doc.get("similarity_score", 0.0)
         preview = doc.get("text_content", "")[:120].replace("\n", " ").strip()
-        logger.info(f"║ 🎯 Rank #{rank} | ChunkID: {doc.get('chunk_id')} | Page: {pg} | OrigRank: #{orig_rank} | RerankScore: {score}")
+        logger.info(f"║ 🎯 Rank #{rank} | ChunkID: {doc.get('chunk_id')} | Page: {pg} | RRF: {rrf} | Sim: {sim}")
         logger.info(f"║    Preview: \"{preview}...\"")
     logger.info(f"╚══════════════════════════════════════════════════════════════════════════════════════════")
 

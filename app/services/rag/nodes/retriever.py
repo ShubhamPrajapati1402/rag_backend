@@ -27,10 +27,13 @@ def retriever_node(state: RAGState) -> dict:
         logger.info(f"[RetrieverNode] Embedding query via Hugging Face: '{query[:60]}...'")
         try:
             embeddings_model = get_embeddings_model()
-            query_vector = embeddings_model.embed_query(query)
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(embeddings_model.embed_query, query)
+                query_vector = future.result(timeout=2.5)
             RAGCacheService.set_cached_embedding(query, query_vector)
         except Exception as e:
-            logger.error(f"[RetrieverNode] Failed to generate query embedding: {e}")
+            logger.warning(f"[RetrieverNode] Hugging Face embedding timed out/failed ({e}). Utilizing fast Postgres Full-Text Search (FTS).")
             query_vector = None
     else:
         logger.info(f"[RetrieverNode] Redis embedding cache hit for query: '{query[:60]}...'")

@@ -11,7 +11,7 @@ async def summarizer_node(state: RAGState) -> dict:
     messages = state.get("messages", [])
     existing_summary = state.get("summary", "") or ""
 
-    if len(messages) < 6 or (existing_summary and len(messages) % 4 != 0):
+    if len(messages) < 6 or (len(messages) % 6 != 0):
         return {"summary": existing_summary}
 
     logger.info(f"[SummarizerNode] Periodically updating cumulative conversation summary ({len(messages)} messages)...")
