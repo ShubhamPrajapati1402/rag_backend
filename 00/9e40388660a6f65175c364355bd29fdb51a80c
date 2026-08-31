@@ -1,0 +1,16 @@
+app/core/config.py
+  h_6bfb1d88d0b1fe 17
+app/services/rag/llm.py
+  h_6bfb1d88d0b1fe 26,33-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "009e40388660a6f65175c364355bd29fdb51a80c",
+  "prompts": {},
+  "humans": {
+    "h_6bfb1d88d0b1fe": {
+      "author": "ShubhamPrajapati1402 <scprajapati14@gmail.com>"
+    }
+  }
+}
