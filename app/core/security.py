@@ -72,13 +72,19 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
         logger.debug(f"JWT decode error: {e}")
         return None
 
+SESSION_COOKIE_HINT = "rag_logged_in"
+
+
 def set_auth_cookie(response: Response, token: str) -> None:
     """
-    Sets the secure HttpOnly cookie on the HTTP response.
+    Sets the secure HttpOnly cookie for auth as well as a non-HttpOnly
+    companion session cookie so the frontend can detect active sessions without
+    blindly making unauthenticated network requests.
     """
     max_age = settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
     domain = settings.COOKIE_DOMAIN if settings.COOKIE_DOMAIN else None
     
+    # 1. Secure HttpOnly cookie containing the actual JWT token
     response.set_cookie(
         key=settings.COOKIE_NAME,
         value=token,
@@ -90,13 +96,28 @@ def set_auth_cookie(response: Response, token: str) -> None:
         httponly=True,
         samesite=settings.COOKIE_SAMESITE.lower()
     )
+    
+    # 2. Non-HttpOnly companion cookie indicator for client-side session detection
+    response.set_cookie(
+        key=SESSION_COOKIE_HINT,
+        value="1",
+        max_age=max_age,
+        expires=max_age,
+        path="/",
+        domain=domain,
+        secure=settings.COOKIE_SECURE,
+        httponly=False,
+        samesite=settings.COOKIE_SAMESITE.lower()
+    )
+
 
 def delete_auth_cookie(response: Response) -> None:
     """
-    Clears the auth cookie by setting it to an empty value with immediate expiration.
+    Clears both the auth cookie and companion session cookie with immediate expiration.
     """
     domain = settings.COOKIE_DOMAIN if settings.COOKIE_DOMAIN else None
     
+    # 1. Clear HttpOnly auth cookie
     response.delete_cookie(
         key=settings.COOKIE_NAME,
         path="/",
@@ -105,3 +126,14 @@ def delete_auth_cookie(response: Response) -> None:
         httponly=True,
         samesite=settings.COOKIE_SAMESITE.lower()
     )
+    
+    # 2. Clear companion session cookie
+    response.delete_cookie(
+        key=SESSION_COOKIE_HINT,
+        path="/",
+        domain=domain,
+        secure=settings.COOKIE_SECURE,
+        httponly=False,
+        samesite=settings.COOKIE_SAMESITE.lower()
+    )
+

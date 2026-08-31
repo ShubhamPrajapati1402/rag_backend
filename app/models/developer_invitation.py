@@ -19,7 +19,7 @@ class DeveloperInvitation(Base):
 
     expires_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(ZoneInfo("Asia/Kolkata")) + timedelta(days=7),
+        default=lambda: datetime.now(ZoneInfo("Asia/Kolkata")) + timedelta(hours=48),
         nullable=False
     )
     accepted_at = Column(DateTime(timezone=True), nullable=True)

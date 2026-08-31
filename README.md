@@ -110,11 +110,12 @@ flowchart TB
 | **Admin** | `🛡️ Admin` | **Team Administrator**. Can invite **Members**, run benchmarks, and revoke Members. Cannot revoke Super Admin or other Admins. |
 | **Member** | `💻 Member` | **Developer / Analyst**. Can execute benchmarks, inspect granular claim evaluations, and view scorecards. Cannot invite or revoke team members. |
 
-#### Tokenized Invitation Flow:
+#### Tokenized Invitation & Security Policy:
 1. **Inviting Teammates**: Inviter selects `Member` or `Admin` role in the Developer Team modal.
-2. **Secure Token Generation**: Generates a 32-byte URL-safe secret token (`/accept-invite?token=...`) stored with `status="PENDING"`. The user is **NOT** promoted until accepted.
-3. **Interactive Acceptance**: Invitee clicks the link to review invitation metadata and clicks **"Accept & Join Team"** to activate developer privileges.
-4. **Real-Time Synchronization**: Broadcasts `DEVELOPER_INVITED`, `DEVELOPER_JOINED`, and `DEVELOPER_REVOKED` over WebSockets to sync presence and membership across all open browser sessions without refreshing.
+2. **Secure 48-Hour Token Generation**: Generates a 32-byte URL-safe secret token (`/accept-invite?token=...`) stored with `status="PENDING"` and an automatic **48-hour expiration timestamp**. The user is **NOT** promoted until accepted.
+3. **Strict Recipient Validation**: The invitation link is cryptographically bound to the invited email address. Even if another authenticated user intercepts or opens the link, the backend rejects acceptance with `403 Forbidden` (`Security Policy: This invitation was generated exclusively for '<email>'`).
+4. **Interactive Acceptance**: Invitee signs in with the matching email and clicks **"Accept & Join Team"** to activate developer privileges.
+5. **Real-Time Synchronization**: Broadcasts `DEVELOPER_INVITED`, `DEVELOPER_JOINED`, and `DEVELOPER_REVOKED` over WebSockets to sync presence and membership across all open browser sessions without refreshing.
 
 ---
 

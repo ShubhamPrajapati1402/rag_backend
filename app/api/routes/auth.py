@@ -1,6 +1,6 @@
 from typing import List, Optional
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, Query, status
 from sqlalchemy.orm import Session
@@ -135,7 +135,7 @@ async def google_auth(
     db: Session = Depends(get_db)
 ):
     user, access_token = await AuthService.authenticate_google(
-        db, google_data, background_tasks
+        db, google_data.id_token, background_tasks
     )
     set_auth_cookie(response, access_token)
     return TokenResponse(
@@ -286,20 +286,22 @@ def invite_developer(
     for ex in existing_invites:
         ex.status = "EXPIRED"
 
-    # Generate secure random invitation token
+    # Generate secure random invitation token valid for 48 hours
     invite_token = secrets.token_urlsafe(32)
+    expires_at = datetime.now(ZoneInfo("Asia/Kolkata")) + timedelta(hours=48)
     invitation = DeveloperInvitation(
         email=clean_email,
         token=invite_token,
         role=target_role,
         invited_by_email=current_user.email,
-        status="PENDING"
+        status="PENDING",
+        expires_at=expires_at
     )
     db.add(invitation)
     db.commit()
     db.refresh(invitation)
 
-    # Send invitation email with join link
+    # Send invitation email with join link (valid for 48h)
     background_tasks.add_task(
         EmailService.send_developer_invite_email,
         to_email=clean_email,
@@ -322,13 +324,14 @@ def invite_developer(
             "status": "PENDING",
             "presence": "PENDING",
             "created_at": invitation.created_at.isoformat() if invitation.created_at else None,
+            "expires_at": invitation.expires_at.isoformat() if invitation.expires_at else None,
             "invited_by": current_user.email
         }
     )
 
     role_label = "Admin" if target_role == "ADMIN" else "Developer Member"
     return AuthMessageResponse(
-        message=f"Invitation link sent to {clean_email} as {role_label}!"
+        message=f"Invitation link sent to {clean_email} as {role_label} (valid for 48 hours)!"
     )
 
 
@@ -348,9 +351,12 @@ def verify_invite(
     ).first()
 
     if not invitation or invitation.is_expired():
+        if invitation and invitation.is_expired():
+            invitation.status = "EXPIRED"
+            db.commit()
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Invitation link is invalid, expired, or has already been accepted."
+            detail="This invitation link is invalid, expired, or has already been accepted (invitations expire 48 hours after dispatch)."
         )
 
     return VerifyInviteResponse(
@@ -379,16 +385,25 @@ def accept_invite(
         DeveloperInvitation.status == "PENDING"
     ).first()
 
-    if not invitation or invitation.is_expired():
+    if not invitation:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invitation is invalid, expired, or already used."
+            detail="Invitation link is invalid or has already been used."
         )
 
+    if invitation.is_expired():
+        invitation.status = "EXPIRED"
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This invitation link has expired. Invitation links are only valid for 48 hours from the time they are dispatched."
+        )
+
+    # Strict recipient validation: only the exact invited email account can accept
     if invitation.email.lower() != current_user.email.lower():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"This invitation was issued for '{invitation.email}'. You are signed in as '{current_user.email}'."
+            detail=f"Security Policy: This invitation was generated exclusively for '{invitation.email}'. You are currently authenticated as '{current_user.email}'. Please sign in with '{invitation.email}' to accept this invitation."
         )
 
     # Activate developer privileges

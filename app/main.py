@@ -80,5 +80,5 @@ if __name__ == "__main__":
         "app.main:app",
         host=settings.BACKEND_HOST,
         port=settings.BACKEND_PORT,
-        reload=settings.DEBUG
+        reload=True
     )

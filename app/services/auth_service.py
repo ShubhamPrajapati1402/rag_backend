@@ -227,14 +227,15 @@ class AuthService:
     async def authenticate_google(
         cls,
         db: Session,
-        id_token_str: str,
+        google_data: Any,
         background_tasks: Optional[BackgroundTasks] = None
     ) -> Tuple[User, str]:
         """
         Verifies Google OAuth2 ID token, finds or creates verified user, and creates JWT session.
         Sends a Welcome Email if this is a first-time signup.
         """
-        google_payload = GoogleAuthService.verify_token(id_token_str)
+        raw_token = google_data.id_token if hasattr(google_data, "id_token") else str(google_data)
+        google_payload = GoogleAuthService.verify_token(raw_token)
         email = google_payload["email"].strip().lower()
         full_name = google_payload.get("name")
         avatar_url = google_payload.get("picture")
