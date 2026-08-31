@@ -23,14 +23,21 @@ def get_llm(temperature: float = 0.3) -> Any:
         timeout=12.0,
         max_retries=0
     )
-    fallback = ChatGroq(
+    fallback_1 = ChatGroq(
         groq_api_key=settings.GROQ_API_KEY,
         model_name=settings.GROQ_MODEL_NAME,
         temperature=temperature,
         timeout=12.0,
         max_retries=2
     )
-    return primary.with_fallbacks([fallback])
+    fallback_2 = ChatGroq(
+        groq_api_key=settings.GROQ_API_KEY,
+        model_name=settings.GROQ_FALLBACK_MODEL_NAME,
+        temperature=temperature,
+        timeout=12.0,
+        max_retries=2
+    )
+    return primary.with_fallbacks([fallback_1, fallback_2])
 
 def get_groq_llm(temperature: float = 0.3, model_name: Optional[str] = None) -> Any:
     """
