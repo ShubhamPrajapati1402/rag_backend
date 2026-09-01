@@ -25,3 +25,8 @@ class RAGState(TypedDict):
     session_id: Optional[str]
     user_id: Optional[int]
     document_ids: Optional[List[int]]
+    model_provider: Optional[str]
+    model_name: Optional[str]
+    custom_api_key: Optional[str]
+    custom_base_url: Optional[str]
+    temperature: Optional[float]

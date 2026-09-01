@@ -46,6 +46,9 @@ async def stream_chat_message(
     db = SessionLocal()
     try:
         is_new_session = False
+        target_provider = request.model_provider or "inbuilt"
+        target_model = request.model_name or ("gemini-2.5-flash" if target_provider in ("inbuilt", "gemini") else None)
+
         if request.session_id:
             session = db.query(ChatSession).filter(
                 ChatSession.id == request.session_id,
@@ -53,9 +56,21 @@ async def stream_chat_message(
             ).first()
             if not session:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
+            # If user provided a new model for existing session, update it
+            if request.model_provider and request.model_provider != session.model_provider:
+                session.model_provider = request.model_provider
+            if request.model_name and request.model_name != session.model_name:
+                session.model_name = request.model_name
+            target_provider = session.model_provider or target_provider
+            target_model = session.model_name or target_model
         else:
             is_new_session = True
-            session = ChatSession(user_id=user_id, title="New Conversation")
+            session = ChatSession(
+                user_id=user_id,
+                title="New Conversation",
+                model_provider=target_provider,
+                model_name=target_model or "gemini-2.5-flash"
+            )
             db.add(session)
             db.commit()
             db.refresh(session)
@@ -75,7 +90,7 @@ async def stream_chat_message(
     finally:
         db.close()
 
-    # Initial state
+    # Initial state for LangGraph
     initial_state = {
         "messages": formatted_history + [{"role": "user", "content": request.question}],
         "summary": "",
@@ -88,16 +103,23 @@ async def stream_chat_message(
         "relevance_score": 1.0,
         "session_id": session_id,
         "user_id": user_id,
-        "document_ids": request.document_ids
+        "document_ids": request.document_ids,
+        "model_provider": target_provider,
+        "model_name": target_model,
+        "custom_api_key": request.api_key,
+        "custom_base_url": None,
+        "temperature": request.temperature or 0.3
     }
 
     async def event_generator() -> AsyncGenerator[str, None]:
         try:
-            # Send initial metadata
+            # Send initial metadata with selected model information
             yield format_sse("metadata", {
                 "session_id": session_id,
                 "title": initial_title,
-                "is_new_session": is_new_session
+                "is_new_session": is_new_session,
+                "model_provider": target_provider,
+                "model_name": target_model or "gemini-2.5-flash"
             })
 
             accumulated_text = ""
@@ -228,14 +250,23 @@ async def stream_chat_message(
                     role="assistant",
                     content=accumulated_text,
                     citations=final_citations,
-                    route_taken=route_taken
+                    route_taken=route_taken,
+                    model_provider=target_provider,
+                    model_name=target_model or "gemini-2.5-flash"
                 )
                 persist_db.add_all([user_msg, assistant_msg])
 
                 # Update title if new session
                 final_title = db_session.title if db_session else initial_title
                 if is_new_session or (db_session and db_session.title == "New Conversation"):
-                    final_title = await agenerate_chat_title(request.question, accumulated_text)
+                    final_title = await agenerate_chat_title(
+                        question=request.question,
+                        response=accumulated_text,
+                        model_provider=target_provider,
+                        model_name=target_model,
+                        api_key=request.api_key,
+                        user_id=user_id
+                    )
                     if db_session:
                         db_session.title = final_title
 
@@ -263,6 +294,8 @@ async def stream_chat_message(
                 "session_id": session_id,
                 "title": final_title,
                 "route_taken": route_taken,
+                "model_provider": target_provider,
+                "model_name": target_model or "gemini-2.5-flash",
                 "total_chars": len(accumulated_text)
             })
 
@@ -293,6 +326,9 @@ async def send_chat_message(
     user_id = current_user.id
     
     is_new_session = False
+    target_provider = request.model_provider or "inbuilt"
+    target_model = request.model_name or ("gemini-2.5-flash" if target_provider in ("inbuilt", "gemini") else None)
+
     if request.session_id:
         session = db.query(ChatSession).filter(
             ChatSession.id == request.session_id,
@@ -300,9 +336,20 @@ async def send_chat_message(
         ).first()
         if not session:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
+        if request.model_provider and request.model_provider != session.model_provider:
+            session.model_provider = request.model_provider
+        if request.model_name and request.model_name != session.model_name:
+            session.model_name = request.model_name
+        target_provider = session.model_provider or target_provider
+        target_model = session.model_name or target_model
     else:
         is_new_session = True
-        session = ChatSession(user_id=user_id, title="New Conversation")
+        session = ChatSession(
+            user_id=user_id,
+            title="New Conversation",
+            model_provider=target_provider,
+            model_name=target_model or "gemini-2.5-flash"
+        )
         db.add(session)
         db.commit()
         db.refresh(session)
@@ -330,10 +377,15 @@ async def send_chat_message(
         "relevance_score": 1.0,
         "session_id": session_id,
         "user_id": user_id,
-        "document_ids": request.document_ids
+        "document_ids": request.document_ids,
+        "model_provider": target_provider,
+        "model_name": target_model,
+        "custom_api_key": request.api_key,
+        "custom_base_url": None,
+        "temperature": request.temperature or 0.3
     }
 
-    logger.info(f"[ChatAPI] Invoking LangGraph RAG Agent for Session: {session_id}")
+    logger.info(f"[ChatAPI] Invoking LangGraph RAG Agent for Session: {session_id} (Provider: {target_provider}, Model: {target_model})")
     
     try:
         final_state = rag_agent_app.invoke(initial_state)
@@ -359,13 +411,22 @@ async def send_chat_message(
         role="assistant",
         content=answer,
         citations=raw_citations,
-        route_taken=route_taken
+        route_taken=route_taken,
+        model_provider=target_provider,
+        model_name=target_model or "gemini-2.5-flash"
     )
     db.add_all([user_msg, assistant_msg])
 
     current_title = session.title
     if is_new_session or session.title == "New Conversation" or len(past_messages) == 0:
-        new_title = generate_chat_title(request.question, answer)
+        new_title = generate_chat_title(
+            question=request.question,
+            response=answer,
+            model_provider=target_provider,
+            model_name=target_model,
+            api_key=request.api_key,
+            user_id=user_id
+        )
         session.title = new_title
         current_title = new_title
 
@@ -390,7 +451,9 @@ async def send_chat_message(
         title=current_title,
         citations=formatted_citations,
         route_taken=route_taken,
-        relevance_score=relevance_score
+        relevance_score=relevance_score,
+        model_provider=target_provider,
+        model_name=target_model or "gemini-2.5-flash"
     )
 
 
@@ -404,6 +467,8 @@ async def list_chat_sessions(
         db.query(
             ChatSession.id,
             ChatSession.title,
+            ChatSession.model_provider,
+            ChatSession.model_name,
             ChatSession.created_at,
             ChatSession.updated_at,
             func.count(ChatMessage.id).label("message_count")
@@ -419,6 +484,8 @@ async def list_chat_sessions(
         ChatSessionSummary(
             id=s.id,
             title=s.title,
+            model_provider=s.model_provider or "inbuilt",
+            model_name=s.model_name or "gemini-2.5-flash",
             created_at=s.created_at,
             updated_at=s.updated_at,
             message_count=s.message_count
@@ -463,6 +530,8 @@ async def get_chat_session_detail(
                 content=m.content,
                 citations=citations if citations else None,
                 route_taken=m.route_taken,
+                model_provider=m.model_provider,
+                model_name=m.model_name,
                 created_at=m.created_at
             )
         )
@@ -470,6 +539,8 @@ async def get_chat_session_detail(
     return ChatSessionDetail(
         id=session.id,
         title=session.title,
+        model_provider=session.model_provider or "inbuilt",
+        model_name=session.model_name or "gemini-2.5-flash",
         created_at=session.created_at,
         messages=formatted_messages
     )

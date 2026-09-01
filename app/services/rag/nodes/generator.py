@@ -61,7 +61,14 @@ async def rag_generator_node(state: RAGState) -> dict:
     context_text = "\n\n".join(context_blocks)
     prompt = f"Context Information:\n{context_text}\n\nUser Question:\n{question}\n\nAnswer:"
 
-    llm = get_groq_llm(temperature=0.3)
+    llm = get_groq_llm(
+        temperature=state.get("temperature", 0.3) or 0.3,
+        model_provider=state.get("model_provider"),
+        model_name=state.get("model_name"),
+        api_key=state.get("custom_api_key"),
+        base_url=state.get("custom_base_url"),
+        user_id=state.get("user_id")
+    )
     response = await llm.ainvoke([
         SystemMessage(content=GENERATOR_SYSTEM_PROMPT),
         HumanMessage(content=prompt)
@@ -94,7 +101,14 @@ async def direct_generator_node(state: RAGState) -> dict:
             for m in messages[-4:]
         ]) + "\n\n"
 
-    llm = get_groq_llm(temperature=0.3)
+    llm = get_groq_llm(
+        temperature=state.get("temperature", 0.3) or 0.3,
+        model_provider=state.get("model_provider"),
+        model_name=state.get("model_name"),
+        api_key=state.get("custom_api_key"),
+        base_url=state.get("custom_base_url"),
+        user_id=state.get("user_id")
+    )
     response = await llm.ainvoke([
         SystemMessage(content=DIRECT_GENERATOR_SYSTEM_PROMPT),
         HumanMessage(content=f"{history_text}User: {question}")
@@ -116,7 +130,14 @@ async def fallback_generator_node(state: RAGState) -> dict:
     question = state.get("question", "")
     logger.info(f"[FallbackGeneratorNode] Generating dynamic polite refusal for query: '{question}'...")
 
-    llm = get_groq_llm(temperature=0.3)
+    llm = get_groq_llm(
+        temperature=state.get("temperature", 0.3) or 0.3,
+        model_provider=state.get("model_provider"),
+        model_name=state.get("model_name"),
+        api_key=state.get("custom_api_key"),
+        base_url=state.get("custom_base_url"),
+        user_id=state.get("user_id")
+    )
     response = await llm.ainvoke([
         SystemMessage(content=FALLBACK_REFUSAL_SYSTEM_PROMPT),
         HumanMessage(content=f"User Question: {question}")

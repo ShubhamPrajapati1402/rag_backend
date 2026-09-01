@@ -45,6 +45,12 @@ def init_db():
             conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_path TEXT;"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_doc_chunks_fts ON document_chunks USING gin(to_tsvector('english', text_content));"))
             
+            # Chat sessions and messages model metadata
+            conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS model_provider VARCHAR(50) DEFAULT 'inbuilt';"))
+            conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS model_name VARCHAR(100) DEFAULT 'gemini-2.5-flash';"))
+            conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS model_provider VARCHAR(50);"))
+            conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS model_name VARCHAR(100);"))
+            
         logger.info("Database tables initialized and migrated successfully.")
     except Exception as e:
         logger.error(f"Error initializing database: {e}")

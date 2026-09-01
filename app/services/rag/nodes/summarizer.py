@@ -17,7 +17,14 @@ async def summarizer_node(state: RAGState) -> dict:
     logger.info(f"[SummarizerNode] Periodically updating cumulative conversation summary ({len(messages)} messages)...")
 
     try:
-        llm = get_groq_llm(temperature=0.4)
+        llm = get_groq_llm(
+            temperature=0.4,
+            model_provider=state.get("model_provider"),
+            model_name=state.get("model_name"),
+            api_key=state.get("custom_api_key"),
+            base_url=state.get("custom_base_url"),
+            user_id=state.get("user_id")
+        )
         formatted_messages = "\n".join([
             f"{m.get('role', 'user').upper()}: {m.get('content', '')}"
             for m in messages

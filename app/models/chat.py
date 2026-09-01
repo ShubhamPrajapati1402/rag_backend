@@ -14,6 +14,8 @@ class ChatSession(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     title = Column(String, nullable=False, default="New Conversation")
+    model_provider = Column(String(50), nullable=True, default="inbuilt")
+    model_name = Column(String(100), nullable=True, default="gemini-2.5-flash")
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(ZoneInfo("Asia/Kolkata")))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(ZoneInfo("Asia/Kolkata")), onupdate=lambda: datetime.now(ZoneInfo("Asia/Kolkata")))
 
@@ -23,7 +25,7 @@ class ChatSession(Base):
 class ChatMessage(Base):
     """
     SQLAlchemy model representing individual messages in a conversation.
-    Stores role (user / assistant / system), content, source citations, and the routing path.
+    Stores role (user / assistant / system), content, source citations, routing path, and model used.
     """
     __tablename__ = "chat_messages"
 
@@ -33,6 +35,8 @@ class ChatMessage(Base):
     content = Column(Text, nullable=False)
     citations = Column(JSON, nullable=True)  # List of source document citations
     route_taken = Column(String, nullable=True)  # "direct", "vectorstore", "fallback"
+    model_provider = Column(String(50), nullable=True)
+    model_name = Column(String(100), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(ZoneInfo("Asia/Kolkata")))
 
     session = relationship("ChatSession", back_populates="messages")

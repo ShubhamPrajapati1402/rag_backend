@@ -3,6 +3,7 @@ from app.models.user import User
 from app.models.developer_invitation import DeveloperInvitation
 from app.models.chat import ChatSession, ChatMessage
 from app.models.evaluation import EvaluationRun, EvaluationCase
+from app.models.user_api_key import UserAPIKey
 
 __all__ = [
     "Base",
@@ -14,5 +15,6 @@ __all__ = [
     "ChatSession",
     "ChatMessage",
     "EvaluationRun",
-    "EvaluationCase"
+    "EvaluationCase",
+    "UserAPIKey"
 ]

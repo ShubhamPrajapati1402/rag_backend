@@ -119,12 +119,12 @@ flowchart TB
 
 ---
 
-### 2. Multi-Tier Resilient LLM Fallback Chain
-* **Environment-Driven Configuration**: All LLM models are configured in `.env` via `GEMINI_MODEL_NAME`, `GROQ_MODEL_NAME`, and `GROQ_FALLBACK_MODEL_NAME`. Zero hardcoded model names.
-* **3-Tier Automatic Failover**:
-  * **Tier 1**: Google Gemini (`gemini-2.5-flash`) — Ultra-low latency primary model.
-  * **Tier 2**: Groq Qwen (`qwen/qwen3.8-27b`) — High-speed fallback on rate limits or API outages.
-  * **Tier 3**: Groq GPT-OSS (`openai/gpt-oss-120b`) — Massive parameter secondary fallback ensuring 100% uptime.
+### 2. Multi-Provider & BYOK (Bring Your Own Key) Architecture
+* **Dual-Access Modes**:
+  * **Inbuilt System Chain**: Zero-configuration default with Google Gemini (`gemini-2.5-flash`) and resilient Groq failover (`qwen/qwen3.8-27b` and `openai/gpt-oss-120b`).
+  * **Bring Your Own Key (BYOK)**: Users can register personal API keys for **Google Gemini**, **Groq**, **OpenAI** (`gpt-4o`, `gpt-4o-mini`, `o3-mini`), **Anthropic** (`claude-3-5-sonnet`, `claude-3-5-haiku`), **DeepSeek** (`deepseek-chat`, `deepseek-reasoner`), **Mistral**, **OpenRouter**, or any custom **OpenAI-compatible / Ollama** endpoint.
+* **Encrypted Key Vault**: User API keys are encrypted at rest with AES-256 Fernet symmetric cryptography. Plaintext keys are never logged or exposed in API payloads (only safe masked hints like `sk-...cdef`).
+* **Per-Session Dynamic Model Selection**: Users can switch models and providers on the fly per chat session or per message.
 
 ---
 
@@ -176,6 +176,15 @@ flowchart TB
 | `GET` | `/api/v1/auth/verify-invite` | Verify invitation token | Public |
 | `POST` | `/api/v1/auth/accept-invite` | Accept invitation and activate developer role | Authenticated |
 | `POST` | `/api/v1/auth/manage-developer` | Revoke developer access or cancel pending invite | Admin / Super Admin |
+
+### Model Providers & BYOK Vault (`/api/v1/models`)
+| Method | Endpoint | Description | Auth Required |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/models` | List all supported models and active provider configuration status | Public / Optional Auth |
+| `GET` | `/api/v1/models/keys` | List user's encrypted provider keys (Masked `sk-...cdef`) | Authenticated |
+| `POST` | `/api/v1/models/keys` | Save or update an encrypted API key for a provider | Authenticated |
+| `DELETE` | `/api/v1/models/keys/{provider}` | Revoke and delete a configured provider key | Authenticated |
+| `POST` | `/api/v1/models/test-connection` | Test live communication and measure latency for an API key | Public / Optional Auth |
 
 ### RAG Evaluation Suite (`/api/v1/eval`)
 | Method | Endpoint | Description | Auth Required |

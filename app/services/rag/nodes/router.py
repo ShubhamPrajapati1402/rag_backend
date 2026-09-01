@@ -24,7 +24,14 @@ async def router_node(state: RAGState) -> dict:
         return {"route": "direct"}
 
     try:
-        llm = get_groq_llm(temperature=0.3)
+        llm = get_groq_llm(
+            temperature=0.3,
+            model_provider=state.get("model_provider"),
+            model_name=state.get("model_name"),
+            api_key=state.get("custom_api_key"),
+            base_url=state.get("custom_base_url"),
+            user_id=state.get("user_id")
+        )
         
         context_parts = []
         if summary:
