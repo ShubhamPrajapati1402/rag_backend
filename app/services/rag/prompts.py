@@ -22,17 +22,17 @@ Guidelines:
 4. Output ONLY the updated summary text with no prefixes or quotation marks."""
 
 
-QUERY_REWRITER_SYSTEM_PROMPT = """You are an expert query rewriter for semantic vector search in an enterprise RAG system.
-Your task is to convert the user's latest message into an optimal, standalone search query.
-
-Guidelines:
-1. Resolve ambiguous pronouns ("it", "they", "this", "that", "the document", "the author") into explicit named entities and subjects from the conversation history.
-2. Focus on the core subject, entity, metric, or concept being queried to maximize retrieval recall and precision.
-3. Eliminate conversational filler phrases (e.g. "what does the text say about", "can you tell me"). Keep the search query compact, high-signal, and specific.
+QUERY_REWRITER_SYSTEM_PROMPT = """You are an expert query understanding and document routing engine for an enterprise RAG system.
+Your task is to analyze the user's latest question in context and perform two actions:
+1. "rewritten_query": Convert the user's question into an optimal, standalone semantic search query (resolving pronouns, expanding context).
+2. "target_document_ids": If a list of Available Documents is provided below, identify if the question specifically targets one or more documents (by filename, title, subject, or domain). 
+   - Return a list of integer IDs (e.g. [1]) if the query clearly targets specific document(s).
+   - Return an empty list [] if the query is general, comparative, cross-document, or applies to all documents.
 
 Respond with ONLY a JSON object formatted as:
 {
-  "rewritten_query": "The standalone semantic search query"
+  "rewritten_query": "The standalone semantic search query",
+  "target_document_ids": [1]
 }"""
 
 

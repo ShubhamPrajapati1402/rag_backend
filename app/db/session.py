@@ -30,27 +30,20 @@ def get_db():
     finally:
         db.close()
 
+from app.db.migrations.runner import run_migrations
+
 def init_db():
     """
-    Initializes the database by creating all tables defined in our SQLAlchemy models
-    and running safe schema migrations for newly added columns.
+    Initializes the database by creating all tables defined in SQLAlchemy models
+    and executing version-tracked schema migrations.
     """
     try:
+        # 1. Ensure core schema tables exist
         Base.metadata.create_all(bind=engine)
         
-        # Safe idempotent column additions for existing tables
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);"))
-            conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP WITH TIME ZONE;"))
-            conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_path TEXT;"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_doc_chunks_fts ON document_chunks USING gin(to_tsvector('english', text_content));"))
-            
-            # Chat sessions and messages model metadata
-            conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS model_provider VARCHAR(50) DEFAULT 'inbuilt';"))
-            conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS model_name VARCHAR(100) DEFAULT 'gemini-2.5-flash';"))
-            conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS model_provider VARCHAR(50);"))
-            conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS model_name VARCHAR(100);"))
-            
+        # 2. Run version-tracked schema migrations
+        run_migrations(engine)
+        
         logger.info("Database tables initialized and migrated successfully.")
     except Exception as e:
         logger.error(f"Error initializing database: {e}")

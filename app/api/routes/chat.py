@@ -21,6 +21,7 @@ from app.schemas.chat_schemas import (
     ChatMessageItem,
     CitationSchema
 )
+from app.core.config import settings
 from app.services.rag.graph import rag_agent_app
 from app.services.rag.llm import generate_chat_title, agenerate_chat_title, extract_text_content
 
@@ -47,7 +48,7 @@ async def stream_chat_message(
     try:
         is_new_session = False
         target_provider = request.model_provider or "inbuilt"
-        target_model = request.model_name or ("gemini-2.5-flash" if target_provider in ("inbuilt", "gemini") else None)
+        target_model = request.model_name or (settings.GEMINI_MODEL_NAME if target_provider in ("inbuilt", "gemini") else None)
 
         if request.session_id:
             session = db.query(ChatSession).filter(
@@ -69,7 +70,7 @@ async def stream_chat_message(
                 user_id=user_id,
                 title="New Conversation",
                 model_provider=target_provider,
-                model_name=target_model or "gemini-2.5-flash"
+                model_name=target_model or settings.GEMINI_MODEL_NAME
             )
             db.add(session)
             db.commit()
@@ -119,7 +120,7 @@ async def stream_chat_message(
                 "title": initial_title,
                 "is_new_session": is_new_session,
                 "model_provider": target_provider,
-                "model_name": target_model or "gemini-2.5-flash"
+                "model_name": target_model or settings.GEMINI_MODEL_NAME
             })
 
             accumulated_text = ""
@@ -252,7 +253,7 @@ async def stream_chat_message(
                     citations=final_citations,
                     route_taken=route_taken,
                     model_provider=target_provider,
-                    model_name=target_model or "gemini-2.5-flash"
+                    model_name=target_model or settings.GEMINI_MODEL_NAME
                 )
                 persist_db.add_all([user_msg, assistant_msg])
 
@@ -295,7 +296,7 @@ async def stream_chat_message(
                 "title": final_title,
                 "route_taken": route_taken,
                 "model_provider": target_provider,
-                "model_name": target_model or "gemini-2.5-flash",
+                "model_name": target_model or settings.GEMINI_MODEL_NAME,
                 "total_chars": len(accumulated_text)
             })
 
@@ -327,7 +328,7 @@ async def send_chat_message(
     
     is_new_session = False
     target_provider = request.model_provider or "inbuilt"
-    target_model = request.model_name or ("gemini-2.5-flash" if target_provider in ("inbuilt", "gemini") else None)
+    target_model = request.model_name or (settings.GEMINI_MODEL_NAME if target_provider in ("inbuilt", "gemini") else None)
 
     if request.session_id:
         session = db.query(ChatSession).filter(
@@ -348,7 +349,7 @@ async def send_chat_message(
             user_id=user_id,
             title="New Conversation",
             model_provider=target_provider,
-            model_name=target_model or "gemini-2.5-flash"
+            model_name=target_model or settings.GEMINI_MODEL_NAME
         )
         db.add(session)
         db.commit()
@@ -413,7 +414,7 @@ async def send_chat_message(
         citations=raw_citations,
         route_taken=route_taken,
         model_provider=target_provider,
-        model_name=target_model or "gemini-2.5-flash"
+        model_name=target_model or settings.GEMINI_MODEL_NAME
     )
     db.add_all([user_msg, assistant_msg])
 
@@ -453,7 +454,7 @@ async def send_chat_message(
         route_taken=route_taken,
         relevance_score=relevance_score,
         model_provider=target_provider,
-        model_name=target_model or "gemini-2.5-flash"
+        model_name=target_model or settings.GEMINI_MODEL_NAME
     )
 
 
@@ -485,7 +486,7 @@ async def list_chat_sessions(
             id=s.id,
             title=s.title,
             model_provider=s.model_provider or "inbuilt",
-            model_name=s.model_name or "gemini-2.5-flash",
+            model_name=s.model_name or settings.GEMINI_MODEL_NAME,
             created_at=s.created_at,
             updated_at=s.updated_at,
             message_count=s.message_count
@@ -540,7 +541,7 @@ async def get_chat_session_detail(
         id=session.id,
         title=session.title,
         model_provider=session.model_provider or "inbuilt",
-        model_name=session.model_name or "gemini-2.5-flash",
+        model_name=session.model_name or settings.GEMINI_MODEL_NAME,
         created_at=session.created_at,
         messages=formatted_messages
     )

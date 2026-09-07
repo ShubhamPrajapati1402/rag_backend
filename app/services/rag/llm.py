@@ -149,12 +149,13 @@ def get_llm(
 
     # 1. Inbuilt Default Resilient Chain (Gemini Flash + Groq Fallbacks)
     if provider == "inbuilt":
+        gemini_model = settings.GEMINI_MODEL_NAME if (not model_name or model_name in ("inbuilt", "default", "gemini-2.5-flash", "gemini-3.6-flash")) else model_name
         primary = ChatGoogleGenerativeAI(
-            model=model_name or settings.GEMINI_MODEL_NAME,
+            model=gemini_model,
             google_api_key=resolved_key or settings.GEMINI_API_KEY,
             temperature=temp_val,
-            timeout=15.0,
-            max_retries=0
+            timeout=30.0,
+            max_retries=1
         )
         fallback_1 = ChatGroq(
             groq_api_key=settings.GROQ_API_KEY,
@@ -177,12 +178,22 @@ def get_llm(
         key = resolved_key or settings.GEMINI_API_KEY
         if not key:
             raise ValueError("Google Gemini API Key is required. Please add your key in settings.")
-        return ChatGoogleGenerativeAI(
-            model=model_name or settings.GEMINI_MODEL_NAME,
+        gemini_model = settings.GEMINI_MODEL_NAME if (not model_name or model_name in ("gemini-2.5-flash", "gemini-3.6-flash", "default")) else model_name
+        primary = ChatGoogleGenerativeAI(
+            model=gemini_model,
             google_api_key=key,
             temperature=temp_val,
-            timeout=25.0
+            timeout=30.0,
+            max_retries=1
         )
+        fallback_1 = ChatGroq(
+            groq_api_key=settings.GROQ_API_KEY,
+            model_name=settings.GROQ_MODEL_NAME,
+            temperature=temp_val,
+            timeout=15.0,
+            max_retries=2
+        )
+        return primary.with_fallbacks([fallback_1])
 
     # 3. Groq
     if provider == "groq":
@@ -344,27 +355,26 @@ async def agenerate_chat_title(
     user_id: Optional[int] = None
 ) -> str:
     """
-    Asynchronously generates an intelligent conversation title using ainvoke.
+    Asynchronously generates an intelligent conversation title using high-speed Groq LPUs in ~200ms.
     """
+    import asyncio
     try:
-        llm = get_llm(
-            temperature=0.3,
-            model_provider=model_provider or "inbuilt",
-            model_name=model_name,
-            api_key=api_key,
-            user_id=user_id
+        llm = get_groq_llm(
+            temperature=0.2,
+            model_provider="groq",
+            model_name=settings.GROQ_MODEL_NAME
         )
         prompt = TITLE_GENERATION_PROMPT.format(
             question=question.strip(),
-            response=response[:300].strip()
+            response=response[:100].strip()
         )
-        result = await llm.ainvoke(prompt)
+        result = await asyncio.wait_for(llm.ainvoke(prompt), timeout=1.8)
         raw_title = result.content if hasattr(result, "content") else str(result)
         return _clean_title(raw_title, question)
     except Exception as e:
-        logger.warning(f"Async LLM Title generation failed: {e}. Using fallback.")
+        logger.debug(f"Fast LLM Title generation fallback: {e}")
         words = question.strip().split()
-        return " ".join(words[:10]) if words else "New Conversation"
+        return " ".join(words[:8]) if words else "New Conversation"
 
 
 def generate_chat_title(

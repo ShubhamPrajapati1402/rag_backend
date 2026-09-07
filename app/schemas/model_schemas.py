@@ -3,7 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 class ModelInfo(BaseModel):
-    id: str = Field(..., description="Unique model identifier, e.g. 'gpt-4o' or 'gemini-2.5-flash'")
+    id: str = Field(..., description="Unique model identifier, e.g. 'gpt-4o' or 'gemini-3.6-flash'")
     name: str = Field(..., description="Human readable model display name")
     provider: str = Field(..., description="Provider name: 'inbuilt', 'gemini', 'groq', 'openai', 'anthropic', 'deepseek', 'mistral', 'openrouter', 'custom'")
     description: str = Field("", description="Brief description of model strengths and capabilities")
@@ -26,7 +26,7 @@ class ProviderInfo(BaseModel):
 
 class ModelsCatalogResponse(BaseModel):
     providers: List[ProviderInfo]
-    default_model: str = "gemini-2.5-flash"
+    default_model: Optional[str] = None
     default_provider: str = "inbuilt"
 
 class UserAPIKeyCreate(BaseModel):

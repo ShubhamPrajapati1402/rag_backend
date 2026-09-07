@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str
     GEMINI_MODEL_NAME: str
     
+    # Voice (STT & TTS)
+    VOICE_STT_MODEL: str
+    VOICE_DEFAULT_TTS_VOICE: str
+    
     # Embeddings & Reranking
     HUGGINGFACE_API_KEY: str
     HUGGINGFACE_EMBEDDING_MODEL: str
