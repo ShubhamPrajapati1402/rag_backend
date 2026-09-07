@@ -8,17 +8,45 @@ from loguru import logger
 from app.core.config import settings
 
 
+import collections
+import hashlib
+
 class VoiceService:
     """Service providing Speech-to-Text (STT) via Groq Whisper and Text-to-Speech (TTS) via Edge-TTS."""
 
     def __init__(self):
         self._groq_client: Optional[AsyncGroq] = None
+        # In-memory LRU audio cache for sub-millisecond audio retrieval on replays / common phrases (max 256 entries)
+        self._audio_cache: collections.OrderedDict = collections.OrderedDict()
+        self._max_cache_size: int = 256
 
     @property
     def groq_client(self) -> AsyncGroq:
         if self._groq_client is None:
             self._groq_client = AsyncGroq(api_key=settings.GROQ_API_KEY)
         return self._groq_client
+
+    def _get_cache_key(self, text: str, voice: str, rate: str, pitch: str) -> str:
+        data = f"{text}|{voice}|{rate}|{pitch}".encode("utf-8")
+        return hashlib.sha256(data).hexdigest()
+
+    def get_cached_audio(self, text: str, voice: str, rate: str = "+0%", pitch: str = "+0Hz") -> Optional[bytes]:
+        key = self._get_cache_key(text, voice, rate, pitch)
+        if key in self._audio_cache:
+            self._audio_cache.move_to_end(key)
+            return self._audio_cache[key]
+        return None
+
+    def store_cached_audio(self, text: str, voice: str, audio_bytes: bytes, rate: str = "+0%", pitch: str = "+0Hz") -> None:
+        if not audio_bytes:
+            return
+        key = self._get_cache_key(text, voice, rate, pitch)
+        if key in self._audio_cache:
+            self._audio_cache.move_to_end(key)
+        else:
+            if len(self._audio_cache) >= self._max_cache_size:
+                self._audio_cache.popitem(last=False)
+            self._audio_cache[key] = audio_bytes
 
     async def transcribe_audio(
         self,
@@ -74,7 +102,7 @@ class VoiceService:
             return ""
 
         # Replace markdown code blocks (```python ... ```) with brief spoken placeholder
-        cleaned = re.sub(r"```[\w-]*\n[\s\S]*?```", " Code block omitted. ", text)
+        cleaned = re.sub(r"```[\s\S]*?```", " Code block omitted. ", text)
         # Strip inline code ticks `code` -> code
         cleaned = re.sub(r"`([^`]+)`", r"\1", cleaned)
         # Strip footnotes / citation badges e.g. [^1], [1], [1, 2]
@@ -104,21 +132,39 @@ class VoiceService:
         rate: str = "+0%",
         pitch: str = "+0Hz",
     ) -> AsyncGenerator[bytes, None]:
-        """Synthesize text into streaming MP3 audio chunks via Edge-TTS."""
+        """Synthesize text into streaming MP3 audio chunks via Edge-TTS with in-memory caching."""
         cleaned_text = self.clean_text_for_tts(text)
         if not cleaned_text:
             return
 
+        selected_voice = voice or settings.VOICE_DEFAULT_TTS_VOICE or "en-US-ChristopherNeural"
+
+        # Check cache first for 0ms retrieval
+        cached = self.get_cached_audio(cleaned_text, selected_voice, rate, pitch)
+        if cached:
+            # Yield in 8KB chunks for standard streaming compatibility
+            chunk_size = 8192
+            for i in range(0, len(cached), chunk_size):
+                yield cached[i : i + chunk_size]
+            return
+
         communicate = edge_tts.Communicate(
             text=cleaned_text,
-            voice=voice or settings.VOICE_DEFAULT_TTS_VOICE or "en-US-ChristopherNeural",
+            voice=selected_voice,
             rate=rate,
             pitch=pitch,
         )
 
+        collected_chunks = []
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
-                yield chunk["data"]
+                data = chunk["data"]
+                collected_chunks.append(data)
+                yield data
+
+        if collected_chunks:
+            full_audio = b"".join(collected_chunks)
+            self.store_cached_audio(cleaned_text, selected_voice, full_audio, rate, pitch)
 
     @staticmethod
     def get_curated_voices() -> List[Dict[str, str]]:

@@ -1,3 +1,4 @@
+import hashlib
 from typing import Optional
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -94,12 +95,14 @@ async def text_to_speech_get(
             rate=rate or "+0%",
             pitch=pitch or "+0Hz",
         )
+        etag = hashlib.md5(f"{cleaned_text}-{voice}-{rate}-{pitch}".encode("utf-8")).hexdigest()
         return StreamingResponse(
             audio_stream,
             media_type="audio/mpeg",
             headers={
                 "Content-Disposition": "inline; filename=speech.mp3",
-                "Cache-Control": "no-cache",
+                "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+                "ETag": f'"{etag}"',
                 "Accept-Ranges": "bytes",
             },
         )
@@ -129,12 +132,14 @@ async def text_to_speech(payload: TTSRequest):
             rate=payload.rate or "+0%",
             pitch=payload.pitch or "+0Hz",
         )
+        etag = hashlib.md5(f"{cleaned_text}-{chosen_voice}-{payload.rate}-{payload.pitch}".encode("utf-8")).hexdigest()
         return StreamingResponse(
             audio_stream,
             media_type="audio/mpeg",
             headers={
                 "Content-Disposition": "inline; filename=speech.mp3",
-                "Cache-Control": "no-cache",
+                "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+                "ETag": f'"{etag}"',
                 "Accept-Ranges": "bytes",
                 "X-Voice-Id": chosen_voice,
             },

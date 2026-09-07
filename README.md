@@ -1,6 +1,6 @@
 # Noesis - Enterprise Agentic RAG Platform Backend
 
-A high-performance, production-grade backend for **Noesis** — an Agentic Retrieval-Augmented Generation (RAG) platform. Built with **FastAPI**, **LangGraph**, **PostgreSQL (Supabase pgvector)**, **Redis**, and a multi-format document ingestion and continuous RAGAs evaluation engine.
+A high-performance, production-grade backend for **Noesis** — an Agentic Retrieval-Augmented Generation (RAG) platform. Built with **FastAPI**, **LangGraph**, **PostgreSQL (Supabase pgvector)**, **Redis**, a 100% free multimodal voice layer (Groq Whisper STT + Microsoft Neural Voice Edge-TTS), intelligent dual-mode document scoping, and a continuous RAGAs evaluation engine.
 
 ---
 
@@ -8,15 +8,17 @@ A high-performance, production-grade backend for **Noesis** — an Agentic Retri
 
 ```mermaid
 flowchart TB
-    subgraph ClientLayer ["Client Layer"]
-        Frontend["Frontend (Port :1001)"]
+    subgraph ClientLayer ["Client Layer (React 19 + TypeScript)"]
+        Frontend["Frontend Studio (Port :1001)"]
         WebSocketClient["WebSocket Presence (/ws/developer-team)"]
+        VoiceStudio["Voice Typing & Instant Audio (<15ms)"]
     end
 
     subgraph APILayer ["FastAPI Gateway (Port :2001)"]
         CORSMiddleware["CORS (Credentials Allowed)"]
         AuthRouter["/api/v1/auth (Auth & 3-Tier RBAC)"]
         ChatRouter["/api/v1/chat (Stateful LangGraph RAG)"]
+        VoiceRouter["/api/v1/voice (STT & Neural TTS)"]
         IngestRouter["/api/v1/ingest (Multi-Format Ingestion)"]
         EvalRouter["/api/v1/eval (RAGAs Benchmark Suite)"]
         WSRouter["/ws/developer-team (Real-Time Pub/Sub Hub)"]
@@ -32,19 +34,28 @@ flowchart TB
         WSManager["Redis Pub/Sub Connection Manager"]
     end
 
+    subgraph VoiceEngine ["Multimodal Voice Layer (100% Free)"]
+        WhisperSTT["Groq Whisper Large v3 Turbo (STT)"]
+        SilenceFilter["Whisper Silence Hallucination Filter"]
+        EdgeTTS["Microsoft Edge-TTS Neural Audio Streamer"]
+        TTSCache["In-Memory LRU Audio Cache (<1ms Replay)"]
+        TextSanitizer["Markdown & Citation Sanitizer"]
+    end
+
     subgraph LLMChain ["Multi-Tier Resilient LLM Fallback Chain"]
-        Tier1["Tier 1: Google Gemini 2.5 Flash"]
-        Tier2["Tier 2: Groq Qwen 27B (Rate Limit Fallback)"]
-        Tier3["Tier 3: Groq GPT-OSS 120B (Final Fallback)"]
+        Tier1["Tier 1: Google Gemini (gemini-flash-latest)"]
+        Tier2["Tier 2: Groq LPU (openai/gpt-oss-120b)"]
+        Tier3["Tier 3: Groq Fallback (openai/gpt-oss-20b)"]
+        FastTitleGen["Groq LPU Instant Title Generator (~200ms)"]
     end
 
     subgraph AgenticRAG ["Stateful LangGraph RAG Core (8-Node Pipeline)"]
         Summarizer["Node 1: Progressive Summarizer"]
         InputGuard["Node 2: Security & Prompt Injection Guardrail"]
         Router["Node 3: Semantic Router"]
-        Rewriter["Node 4: Contextual Query Rewriter"]
+        Rewriter["Node 4: Dual-Mode Contextual Query Rewriter (0ms Fast Pass)"]
         Retriever["Node 5: Stage 1 High-Recall pgvector Retriever (top_k=20)"]
-        Reranker["Node 6: Stage 2 Cross-Encoder Reranker (BAAI/bge-reranker-v2-m3)"]
+        Reranker["Node 6: Stage 2 Single-Doc Fast / Groq Listwise Reranker"]
         Grader["Node 7: Parallel Document Grader (asyncio.gather)"]
         Generator["Node 8: Grounded Generator & Citations"]
         HallucinationGuard["Node 9: Groundedness Audit Guardrail"]
@@ -67,15 +78,18 @@ flowchart TB
         ClaimsAudit["Atomic Sentence Claim Audit"]
     end
 
-    subgraph DataLayer ["Storage & Caching Layer"]
+    subgraph DataLayer ["Storage, Migrations & Caching Layer"]
         PostgreSQL[("PostgreSQL / Supabase (pgvector)")]
+        DBMigrations["Version-Tracked Idempotent SQL Migrations"]
         RedisStore[("Redis Cache (OTP, TTL, Pub/Sub Cluster)")]
     end
 
     Frontend --> CORSMiddleware
     WebSocketClient --> WSRouter
+    VoiceStudio --> VoiceRouter
     CORSMiddleware --> AuthRouter
     CORSMiddleware --> ChatRouter
+    CORSMiddleware --> VoiceRouter
     CORSMiddleware --> IngestRouter
     CORSMiddleware --> EvalRouter
     CORSMiddleware --> HealthRouter
@@ -85,6 +99,10 @@ flowchart TB
     SecurityServices --> PostgreSQL
     WSRouter --> WSManager
     WSManager --> RedisStore
+
+    VoiceRouter --> VoiceEngine
+    VoiceEngine --> WhisperSTT
+    VoiceEngine --> EdgeTTS
 
     ChatRouter --> AgenticRAG
     AgenticRAG --> LLMChain
@@ -102,112 +120,119 @@ flowchart TB
 
 ## Core Systems & Features
 
-### 1. 3-Tier Role-Based Access Control (RBAC) & Tokenized Invitations
-
-| Role | Badge | Permissions |
-| :--- | :--- | :--- |
-| **Super Admin** | `👑 Super Admin` | **Root Owner** (`DEVELOPER_EMAILS`). Can invite **Admins & Members**, revoke any team member, and cannot be revoked or demoted by anyone. |
-| **Admin** | `🛡️ Admin` | **Team Administrator**. Can invite **Members**, run benchmarks, and revoke Members. Cannot revoke Super Admin or other Admins. |
-| **Member** | `💻 Member` | **Developer / Analyst**. Can execute benchmarks, inspect granular claim evaluations, and view scorecards. Cannot invite or revoke team members. |
-
-#### Tokenized Invitation & Security Policy:
-1. **Inviting Teammates**: Inviter selects `Member` or `Admin` role in the Developer Team modal.
-2. **Secure 48-Hour Token Generation**: Generates a 32-byte URL-safe secret token (`/accept-invite?token=...`) stored with `status="PENDING"` and an automatic **48-hour expiration timestamp**. The user is **NOT** promoted until accepted.
-3. **Strict Recipient Validation**: The invitation link is cryptographically bound to the invited email address. Even if another authenticated user intercepts or opens the link, the backend rejects acceptance with `403 Forbidden` (`Security Policy: This invitation was generated exclusively for '<email>'`).
-4. **Interactive Acceptance**: Invitee signs in with the matching email and clicks **"Accept & Join Team"** to activate developer privileges.
-5. **Real-Time Synchronization**: Broadcasts `DEVELOPER_INVITED`, `DEVELOPER_JOINED`, and `DEVELOPER_REVOKED` over WebSockets to sync presence and membership across all open browser sessions without refreshing.
-
----
-
-### 2. Multi-Provider & BYOK (Bring Your Own Key) Architecture
-* **Dual-Access Modes**:
-  * **Inbuilt System Chain**: Zero-configuration default with Google Gemini (`gemini-2.5-flash`) and resilient Groq failover (`qwen/qwen3.8-27b` and `openai/gpt-oss-120b`).
-  * **Bring Your Own Key (BYOK)**: Users can register personal API keys for **Google Gemini**, **Groq**, **OpenAI** (`gpt-4o`, `gpt-4o-mini`, `o3-mini`), **Anthropic** (`claude-3-5-sonnet`, `claude-3-5-haiku`), **DeepSeek** (`deepseek-chat`, `deepseek-reasoner`), **Mistral**, **OpenRouter**, or any custom **OpenAI-compatible / Ollama** endpoint.
-* **Encrypted Key Vault**: User API keys are encrypted at rest with AES-256 Fernet symmetric cryptography. Plaintext keys are never logged or exposed in API payloads (only safe masked hints like `sk-...cdef`).
-* **Per-Session Dynamic Model Selection**: Users can switch models and providers on the fly per chat session or per message.
+### 1. 100% Free Studio Multimodal Voice Layer (STT & TTS)
+* **High-Speed Speech-to-Text (STT)**:
+  * Powered by **Groq Whisper Large v3 Turbo** (`POST /api/v1/voice/stt`) for lightning-fast voice transcription (~300ms).
+  * Inbuilt **Silence Hallucination Filter** automatically detects and suppresses common Whisper phantom phrases (*"Thank you for watching"*, *"Please subscribe"*).
+* **Neural Text-to-Speech (TTS) Streaming**:
+  * Real-time MP3 streaming via **Microsoft Neural Edge-TTS** (`GET /api/v1/voice/tts`, `POST /api/v1/voice/tts`).
+  * **In-Memory LRU Audio Cache**: Repeated phrases and previously synthesized message audio return in **< 1ms** from server RAM.
+  * **HTTP Caching & Range Headers**: Returns `ETag`, `Cache-Control: public, max-age=86400`, and `Accept-Ranges: bytes` for zero-lag browser-cached replays.
+  * **Intelligent Markdown Sanitizer**: Strips code blocks, footnotes, raw URLs, headers, and bullet dashes before synthesis for natural, uninterrupted speech.
+* **Curated Voice Profiles (`GET /api/v1/voice/voices`)**:
+  * `en-US-ChristopherNeural` (Male, Professional & Authoritative)
+  * `en-US-JennyNeural` (Female, Natural & Friendly)
+  * `en-IN-PrabhatNeural` (Male, Indian English Clear & Professional)
+  * `en-IN-NeerjaNeural` (Female, Indian English Warm & Articulate)
+  * `en-GB-RyanNeural` (Male, British English Refined & Polished)
+  * `en-GB-SoniaNeural` (Female, British English Engaging & Expressive)
 
 ---
 
-### 3. Continuous RAGAs Automated Quality Benchmark Suite
-* **Synthetic QA Synthesis**: Generates diverse, document-grounded evaluation questions and synthetic ground truth answers across indexed vector stores.
-* **5-Dimensional Quality Scorecard**:
-  * **Overall RAG Score**: Composite weighted score of context entailment, relevance, precision, and recall.
-  * **Faithfulness (0–100%)**: Verifies zero hallucinations by ensuring all generated statements are strictly entailed by retrieved context chunks.
-  * **Answer Relevance (0–100%)**: Measures how directly and concisely the answer addresses the user query.
-  * **Context Precision (0–100%)**: Evaluates whether the most relevant document chunks are ranked at the top (Rank #1).
-  * **Context Recall (0–100%)**: Measures fact coverage against synthetic reference ground truths.
-* **Atomic Claim Verification Audit**: Breaks every generated answer into individual atomic sentences and audits each for context groundedness with granular reasoning.
+### 2. Intelligent Dual-Mode Document Scoping & Routing Engine
+* **Mode 1: Explicit `@Mention` File Tagging**:
+  * When documents are tagged by the user in the prompt bar, the rewriter activates a **0ms Fast Pass-Through** and vector retrieval strictly filters against the specified `selected_documents`.
+* **Mode 2: ChatGPT-Style Automatic Intent Scoping**:
+  * When no explicit tags are provided, the query rewriter analyzes the prompt against the user's active document list. If the user refers to a document implicitly (*"What is the revenue in the 2025 annual report?"*), it automatically resolves and attaches the target document scope.
 
 ---
 
-### 4. Stateful LangGraph RAG Agent (8-Node Pipeline)
-* **Progressive History Summarization**: Incrementally condenses extended conversation history to maintain contextual memory without exceeding token ceilings.
-* **Security & Prompt Injection Guardrail**: Sanitizes inputs and rejects adversarial prompt injection attempts.
-* **Semantic Intent Router**: Intelligently routes queries between vector search, direct synthesis, or clarification flows.
-* **Contextual Query Rewriting**: Resolves pronouns, co-references, and missing context before vector retrieval.
-* **Stage 1 Vector Retrieval**: Queries pgvector embeddings (`BAAI/bge-m3`) with top-k recall.
-* **Stage 2 Cross-Encoder Reranker**: Rescores retrieved passages with `BAAI/bge-reranker-v2-m3` to eliminate irrelevant noise.
-* **Parallel Document Grader**: Concurrently verifies chunk relevance using `asyncio.gather`.
-* **Grounded Answer Generator & Inline Citations**: Synthesizes verified answers with page-level citations.
+### 3. Multi-Tier Resilient LLM Fallback Chain
+* **Dynamic Configuration (`.env`)**:
+  * Primary: `GEMINI_MODEL_NAME="gemini-flash-latest"`
+  * Fallback Tier 1: `GROQ_MODEL_NAME="openai/gpt-oss-120b"`
+  * Fallback Tier 2: `GROQ_FALLBACK_MODEL_NAME="openai/gpt-oss-20b"`
+* **Automatic Quota & Failover Protection**:
+  * Seamlessly catches Google 429 Quota Exceeded and 503 Service Unavailable errors and falls back to Groq LPUs without dropping the user's stream.
+  * Automatic legacy model remapping ensures historical sessions remain fully operational.
+* **Instant Groq LPU Title Generation**:
+  * Generates session chat titles in **~200ms** (`agenerate_chat_title`) without adding delay to the conversation turn.
 
 ---
 
-### 5. Multi-Format Data Ingestion Engine
-* **10+ Supported File Formats**: PDF, Markdown, DOCX, CSV, TSV, Excel (`.xlsx`, `.xls`), HTML, JSON, PPTX, XML, and TXT via `ParserRegistry`.
-* **Dynamic Layman SSE Stream (`POST /api/v1/ingest/stream`)**: Calculates and streams genuine ingestion progress in real time (e.g. *"Teaching AI concepts (16 of 42 sections learned)..."*).
-* **Hybrid PDF OCR**: Dynamically switches between `pdfplumber` fast text parsing and `unstructured` OCR table extraction.
+### 4. Stateful LangGraph RAG Core (8-Node Pipeline)
+* **Progressive History Summarization**: Incrementally condenses conversation turns to preserve long-term context within token limits.
+* **Security & Prompt Injection Guardrail**: Sanitizes inputs and halts adversarial prompt injection attempts.
+* **Semantic Intent Router**: Directs conversational queries, factual lookups, and clarification workflows.
+* **Dual-Mode Contextual Query Rewriter**: Contextualizes user queries with 0ms fast-path for tagged documents.
+* **Stage 1 High-Recall pgvector Retrieval**: Hybrid vector similarity (`BAAI/bge-m3`) with top-k recall.
+* **Stage 2 Adaptive Reranker**: Employs $0\text{ms}$ fast RRF ordering for single-document scopes ($\le 5$ chunks) and Groq LPU listwise reranking for multi-document candidates.
+* **Parallel Document Relevance Grader**: Verifies candidate chunk relevance concurrently via `asyncio.gather`.
+* **Grounded Answer Generator & Citations**: Synthesizes verified answers with page, row, and section-level source citations.
 
 ---
 
-## API Endpoints
+### 5. Idempotent Version-Tracked Database Migrations
+* **Automatic Startup Migrations**: `app/db/migrations/` tracks applied SQL migrations in a dedicated `schema_migrations` ledger table.
+* **Zero-Downtime Schema Evolution**: Automatically applies new column additions, foreign keys, and indexes on server boot without manual SQL execution.
+
+---
+
+### 6. 3-Tier Role-Based Access Control (RBAC) & Developer Collaboration
+* **Super Admin (`👑`)**: Root platform owner defined in `DEVELOPER_EMAILS`. Can manage team roles and run benchmarks.
+* **Admin (`🛡️`)**: Team administrator. Can invite members with tokenized 48-hour links (`/api/v1/auth/invite-developer`).
+* **Member (`💻`)**: Analyst / Developer. Can execute RAGAs benchmarks and audit atomic claim scorecards.
+* **Real-Time WebSocket Sync (`/ws/developer-team`)**: Synchronizes team presence and role changes in real time across active clients.
+
+---
+
+## API Endpoints Reference
+
+### Voice Layer (`/api/v1/voice`)
+| Method | Endpoint | Description | Auth Required |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/voice/stt` | Transcribe speech audio to text using Groq Whisper Large v3 Turbo | Public / Optional Auth |
+| `GET` | `/api/v1/voice/tts` | Stream neural MP3 audio directly to HTML5 `<audio>` elements | Public / Optional Auth |
+| `POST` | `/api/v1/voice/tts` | Synthesize neural MP3 audio with voice, rate, and pitch parameters | Public / Optional Auth |
+| `GET` | `/api/v1/voice/voices` | List curated Microsoft neural voices with accent & gender metadata | Public |
+
+### Chat & Streaming (`/api/v1/chat`)
+| Method | Endpoint | Description | Auth Required |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/chat/message` | Synchronous invocation through LangGraph RAG pipeline | Authenticated |
+| `POST` | `/api/v1/chat/stream` | Server-Sent Events (SSE) streaming token output & node status | Authenticated |
+| `GET` | `/api/v1/chat/sessions` | List user conversation sessions with message counts | Authenticated |
+| `GET` | `/api/v1/chat/sessions/{id}` | Hydrate message history and citations for a session | Authenticated |
+| `DELETE` | `/api/v1/chat/sessions/{id}` | Delete a chat session and associated messages | Authenticated |
+
+### Document Ingestion (`/api/v1/ingest`)
+| Method | Endpoint | Description | Auth Required |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/ingest/upload` | Upload and parse multi-format documents (10+ formats) | Authenticated |
+| `POST` | `/api/v1/ingest/stream` | Stream dynamic Layman SSE ingestion progress | Authenticated |
+| `GET` | `/api/v1/ingest/documents` | List indexed documents and chunk statistics | Authenticated |
+| `DELETE` | `/api/v1/ingest/documents/{id}` | Delete document and remove embeddings from pgvector | Authenticated |
 
 ### Authentication & RBAC (`/api/v1/auth`)
 | Method | Endpoint | Description | Auth Required |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/v1/auth/signup` | Register new account and send 6-digit OTP | Public |
-| `POST` | `/api/v1/auth/verify-otp` | Verify OTP and set HttpOnly session cookie | Public |
-| `POST` | `/api/v1/auth/resend-otp` | Resend verification OTP (rate limited) | Public |
+| `POST` | `/api/v1/auth/signup` | Register new account and dispatch 6-digit OTP | Public |
+| `POST` | `/api/v1/auth/verify-otp` | Verify OTP and issue HttpOnly session cookie | Public |
 | `POST` | `/api/v1/auth/login` | Email/password login | Public |
 | `POST` | `/api/v1/auth/google` | Google OAuth2 ID token authentication | Public |
-| `POST` | `/api/v1/auth/logout` | Clear session cookie | Authenticated |
+| `POST` | `/api/v1/auth/logout` | Clear active session | Authenticated |
 | `GET` | `/api/v1/auth/me` | Fetch active user profile and developer role | Authenticated |
-| `GET` | `/api/v1/auth/developers` | List active developers and pending invitations | Developer |
+| `GET` | `/api/v1/auth/developers` | List active team developers and pending invitations | Developer |
 | `POST` | `/api/v1/auth/invite-developer` | Send tokenized invitation email with role | Admin / Super Admin |
-| `GET` | `/api/v1/auth/verify-invite` | Verify invitation token | Public |
 | `POST` | `/api/v1/auth/accept-invite` | Accept invitation and activate developer role | Authenticated |
-| `POST` | `/api/v1/auth/manage-developer` | Revoke developer access or cancel pending invite | Admin / Super Admin |
 
-### Model Providers & BYOK Vault (`/api/v1/models`)
+### Evaluation Suite (`/api/v1/eval`)
 | Method | Endpoint | Description | Auth Required |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/api/v1/models` | List all supported models and active provider configuration status | Public / Optional Auth |
-| `GET` | `/api/v1/models/keys` | List user's encrypted provider keys (Masked `sk-...cdef`) | Authenticated |
-| `POST` | `/api/v1/models/keys` | Save or update an encrypted API key for a provider | Authenticated |
-| `DELETE` | `/api/v1/models/keys/{provider}` | Revoke and delete a configured provider key | Authenticated |
-| `POST` | `/api/v1/models/test-connection` | Test live communication and measure latency for an API key | Public / Optional Auth |
-
-### RAG Evaluation Suite (`/api/v1/eval`)
-| Method | Endpoint | Description | Auth Required |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/api/v1/eval/runs` | List historical benchmark runs with scores | Developer |
-| `GET` | `/api/v1/eval/runs/{run_id}` | Deep-dive granular test cases & claim audits | Developer |
+| `GET` | `/api/v1/eval/runs` | List historical benchmark runs with composite scores | Developer |
+| `GET` | `/api/v1/eval/runs/{run_id}` | Granular test cases & atomic claim verification audits | Developer |
 | `POST` | `/api/v1/eval/runs` | Trigger dynamic multi-document RAG benchmark | Developer |
-| `DELETE` | `/api/v1/eval/runs/{run_id}` | Permanently delete evaluation run and test cases | Developer |
-
-### Real-Time WebSockets (`/ws`)
-| Protocol | Endpoint | Description | Auth Required |
-| :--- | :--- | :--- | :--- |
-| `WS` | `/ws/developer-team` | Real-time presence, invitation, and team sync hub | Developer (Cookie/JWT) |
-
-### Chat & Ingestion (`/api/v1/chat`, `/api/v1/ingest`)
-| Method | Endpoint | Description | Auth Required |
-| :--- | :--- | :--- | :--- |
-| `POST` | `/api/v1/chat/message` | Send message through LangGraph RAG pipeline | Authenticated |
-| `GET` | `/api/v1/chat/sessions` | List user chat sessions | Authenticated |
-| `POST` | `/api/v1/ingest/upload` | Upload and ingest document file | Authenticated |
-| `POST` | `/api/v1/ingest/stream` | Stream dynamic Layman SSE ingestion progress | Authenticated |
-| `GET` | `/api/v1/ingest/documents` | List indexed documents and chunk statistics | Authenticated |
-| `DELETE` | `/api/v1/ingest/documents/{id}` | Delete document and vector chunks from pgvector | Authenticated |
+| `DELETE` | `/api/v1/eval/runs/{run_id}` | Delete evaluation run and test cases | Developer |
 
 ---
 
@@ -215,8 +240,8 @@ flowchart TB
 
 ### 1. Prerequisites
 * **Python 3.10+** (or `uv` package manager)
-* **PostgreSQL** with `pgvector` extension enabled (or Supabase instance)
-* **Redis** (Local instance or Redis Cloud)
+* **PostgreSQL** with `pgvector` extension (or Supabase instance)
+* **Redis** (Local or Redis Cloud)
 
 ### 2. Installation
 ```bash
@@ -224,25 +249,34 @@ flowchart TB
 git clone https://github.com/ShubhamPrajapati1402/rag_backend.git
 cd rag_backend
 
-# Install dependencies with uv (or pip)
+# Install dependencies using uv
 uv pip install -r requirements.txt
 ```
 
-### 3. Environment Configuration
-Create a `.env` file based on `.env.example`:
+### 3. Environment Setup
 ```bash
 cp .env.example .env
 ```
-Fill in your API keys for Gemini, Groq, Hugging Face, Supabase, and SMTP.
+Configure your `.env` variables:
+```env
+# Database & Redis
+DATABASE_URL="postgresql://user:password@localhost:5432/rag_db"
+REDIS_URL="redis://localhost:6379/0"
 
-### 4. Database Initialization & Run
-```bash
-# Start FastAPI backend server on port 2001
-uv run python -m uvicorn app.main:app --host 0.0.0.0 --port 2001 --reload
+# LLM Providers
+GEMINI_API_KEY="AIzaSy..."
+GEMINI_MODEL_NAME="gemini-flash-latest"
+GROQ_API_KEY="gsk_..."
+GROQ_MODEL_NAME="openai/gpt-oss-120b"
+GROQ_FALLBACK_MODEL_NAME="openai/gpt-oss-20b"
+
+# Voice Layer (STT & TTS)
+VOICE_STT_MODEL="whisper-large-v3-turbo"
+VOICE_DEFAULT_TTS_VOICE="en-US-ChristopherNeural"
 ```
 
-### 5. Running Tests
+### 4. Running the Server
 ```bash
-# Execute test suite
-uv run pytest
+uv run python app/main.py
 ```
+The server will boot on `http://localhost:2001`, run database migrations automatically, and serve OpenAPI interactive documentation at `http://localhost:2001/docs`.
