@@ -11,6 +11,7 @@ project_root = Path(__file__).resolve().parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +21,8 @@ import uvicorn
 from app.core.config import settings
 from app.db.session import init_db
 from app.api.router import api_router
+from app.api.routes.ws import router as ws_router
+from app.core.websocket_manager import ws_manager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -31,7 +34,14 @@ async def lifespan(app: FastAPI):
         init_db()
     except Exception as e:
         logger.error(f"Database initialization warning on startup: {e}")
+
+    # Start Redis Pub/Sub listener for real-time WebSocket clustering
+    pubsub_task = asyncio.create_task(ws_manager.start_pubsub_listener())
+    
     yield
+
+    # Clean shutdown of background task
+    pubsub_task.cancel()
     logger.info("Shutting down RAG Backend...")
 
 app = FastAPI(
@@ -50,8 +60,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register API routes
+# Register API routes & WebSockets
 app.include_router(api_router)
+app.include_router(ws_router)
 
 @app.get("/health", tags=["Health"])
 def health_check():
@@ -69,5 +80,5 @@ if __name__ == "__main__":
         "app.main:app",
         host=settings.BACKEND_HOST,
         port=settings.BACKEND_PORT,
-        reload=settings.DEBUG
+        reload=True
     )

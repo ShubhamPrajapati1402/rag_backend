@@ -65,6 +65,34 @@ def get_current_user(
 
     return user
 
+def get_optional_current_user(
+    request: Request,
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """
+    Extracts the user if an authenticated token is present, or returns None if unauthenticated.
+    """
+    token: Optional[str] = None
+    if settings.COOKIE_NAME in request.cookies:
+        token = request.cookies.get(settings.COOKIE_NAME)
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+
+    if not token:
+        return None
+
+    payload = decode_access_token(token)
+    if not payload or "sub" not in payload:
+        return None
+
+    try:
+        user_id = int(payload.get("sub"))
+        return db.query(User).filter(User.id == user_id).first()
+    except Exception:
+        return None
+
 def get_current_active_user(
     current_user: User = Depends(get_current_user)
 ) -> User:
@@ -80,5 +108,18 @@ def get_current_active_user(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is not verified. Please verify your email."
+        )
+    return current_user
+
+def get_current_superuser(
+    current_user: User = Depends(get_current_active_user)
+) -> User:
+    """
+    Ensures that the current user has developer/superuser privileges.
+    """
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Developer/Admin access required."
         )
     return current_user

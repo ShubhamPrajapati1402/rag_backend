@@ -14,6 +14,10 @@ class ChatRequest(BaseModel):
     question: str = Field(..., min_length=1, description="User question or prompt")
     session_id: Optional[str] = Field(None, description="Existing session UUID or None to create new session")
     document_ids: Optional[List[int]] = Field(None, description="Optional list of document IDs to restrict search")
+    model_provider: Optional[str] = Field("inbuilt", description="Model provider ('inbuilt', 'gemini', 'groq', 'openai', 'anthropic', 'deepseek', 'mistral', 'openrouter', 'custom')")
+    model_name: Optional[str] = Field(None, description="Model identifier (e.g. 'gemini-2.5-flash', 'gpt-4o', 'claude-3-5-sonnet-latest')")
+    api_key: Optional[str] = Field(None, description="Optional ephemeral API key override for this request")
+    temperature: Optional[float] = Field(0.3, ge=0.0, le=2.0, description="Model sampling temperature")
 
 class ChatResponse(BaseModel):
     answer: str
@@ -22,6 +26,8 @@ class ChatResponse(BaseModel):
     citations: List[CitationSchema] = []
     route_taken: str = "vectorstore"
     relevance_score: float = 1.0
+    model_provider: str = "inbuilt"
+    model_name: str = "gemini-2.5-flash"
 
 class ChatMessageItem(BaseModel):
     id: str
@@ -29,11 +35,15 @@ class ChatMessageItem(BaseModel):
     content: str
     citations: Optional[List[CitationSchema]] = None
     route_taken: Optional[str] = None
+    model_provider: Optional[str] = None
+    model_name: Optional[str] = None
     created_at: datetime
 
 class ChatSessionSummary(BaseModel):
     id: str
     title: str
+    model_provider: Optional[str] = "inbuilt"
+    model_name: Optional[str] = "gemini-2.5-flash"
     created_at: datetime
     updated_at: datetime
     message_count: int = 0
@@ -41,5 +51,7 @@ class ChatSessionSummary(BaseModel):
 class ChatSessionDetail(BaseModel):
     id: str
     title: str
+    model_provider: Optional[str] = "inbuilt"
+    model_name: Optional[str] = "gemini-2.5-flash"
     created_at: datetime
     messages: List[ChatMessageItem] = []

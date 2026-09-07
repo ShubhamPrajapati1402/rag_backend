@@ -1,6 +1,6 @@
-# Noesis - Enterprise RAG Platform Backend
+# Noesis - Enterprise Agentic RAG Platform Backend
 
-A high-performance, production-grade backend for **Noesis** — an Agentic Retrieval-Augmented Generation (RAG) platform. Built with **FastAPI**, **LangGraph**, **PostgreSQL (Supabase pgvector)**, **Redis**, and a multi-format document ingestion engine.
+A high-performance, production-grade backend for **Noesis** — an Agentic Retrieval-Augmented Generation (RAG) platform. Built with **FastAPI**, **LangGraph**, **PostgreSQL (Supabase pgvector)**, **Redis**, and a multi-format document ingestion and continuous RAGAs evaluation engine.
 
 ---
 
@@ -10,22 +10,32 @@ A high-performance, production-grade backend for **Noesis** — an Agentic Retri
 flowchart TB
     subgraph ClientLayer ["Client Layer"]
         Frontend["Frontend (Port :1001)"]
+        WebSocketClient["WebSocket Presence (/ws/developer-team)"]
     end
 
     subgraph APILayer ["FastAPI Gateway (Port :2001)"]
         CORSMiddleware["CORS (Credentials Allowed)"]
-        AuthRouter["/api/v1/auth (Authentication)"]
+        AuthRouter["/api/v1/auth (Auth & 3-Tier RBAC)"]
         ChatRouter["/api/v1/chat (Stateful LangGraph RAG)"]
-        IngestRouter["/api/v1/ingest (Ingestion Engine)"]
+        IngestRouter["/api/v1/ingest (Multi-Format Ingestion)"]
+        EvalRouter["/api/v1/eval (RAGAs Benchmark Suite)"]
+        WSRouter["/ws/developer-team (Real-Time Pub/Sub Hub)"]
         HealthRouter["/health (Healthcheck)"]
     end
 
-    subgraph SecurityServices ["Security & Auth Services"]
+    subgraph SecurityServices ["Security & RBAC Services"]
         JWTService["JWT Handler (PyJWT)"]
         BcryptHandler["Password Hashing (bcrypt)"]
         GoogleOAuth["Google ID Token Verifier"]
         OTPManager["Redis OTP Engine (Rate Limited)"]
-        EmailService["Async SMTP / Dev Logger"]
+        EmailService["Async SMTP (OTP & Tokenized Invites)"]
+        WSManager["Redis Pub/Sub Connection Manager"]
+    end
+
+    subgraph LLMChain ["Multi-Tier Resilient LLM Fallback Chain"]
+        Tier1["Tier 1: Google Gemini 2.5 Flash"]
+        Tier2["Tier 2: Groq Qwen 27B (Rate Limit Fallback)"]
+        Tier3["Tier 3: Groq GPT-OSS 120B (Final Fallback)"]
     end
 
     subgraph AgenticRAG ["Stateful LangGraph RAG Core (8-Node Pipeline)"]
@@ -48,294 +58,191 @@ flowchart TB
         LiveIngestStream["Dynamic Layman SSE Stream"]
     end
 
+    subgraph EvaluationSuite ["Continuous RAGAs Benchmark Suite"]
+        QAGenerator["Multi-Doc Synthetic QA Generator"]
+        FaithfulnessJudge["Context Entailment Judge (0-1)"]
+        RelevanceJudge["Query Intent Relevance Judge (0-1)"]
+        PrecisionJudge["Rank #1 Mean Precision Judge (0-1)"]
+        RecallJudge["Fact Coverage Recall Judge (0-1)"]
+        ClaimsAudit["Atomic Sentence Claim Audit"]
+    end
+
     subgraph DataLayer ["Storage & Caching Layer"]
         PostgreSQL[("PostgreSQL / Supabase (pgvector)")]
-        RedisStore[("Redis Cache (OTP, TTL, Rate Limits)")]
+        RedisStore[("Redis Cache (OTP, TTL, Pub/Sub Cluster)")]
     end
 
     Frontend --> CORSMiddleware
+    WebSocketClient --> WSRouter
     CORSMiddleware --> AuthRouter
     CORSMiddleware --> ChatRouter
     CORSMiddleware --> IngestRouter
+    CORSMiddleware --> EvalRouter
     CORSMiddleware --> HealthRouter
 
     AuthRouter --> SecurityServices
     SecurityServices --> RedisStore
     SecurityServices --> PostgreSQL
+    WSRouter --> WSManager
+    WSManager --> RedisStore
 
     ChatRouter --> AgenticRAG
+    AgenticRAG --> LLMChain
     AgenticRAG --> PostgreSQL
 
     IngestRouter --> IngestionPipeline
     IngestionPipeline --> PostgreSQL
+
+    EvalRouter --> EvaluationSuite
+    EvaluationSuite --> LLMChain
+    EvaluationSuite --> PostgreSQL
 ```
 
 ---
 
 ## Core Systems & Features
 
-### 1. Production Authentication & Security Subsystem
-* **Zero Hardcoded Secrets**: All ports, origins, secrets, cookie flags, and token expiries are strictly loaded from `.env` via Pydantic `Settings`.
-* **HttpOnly Secure Session Cookies**: Prevents Cross-Site Scripting (XSS) token theft. The browser automatically manages and includes authentication cookies with `SameSite=Lax` protection.
-* **Redis-Backed OTP Engine**:
-  * **Zero Database Overhead**: Ephemeral 6-digit verification codes are stored in Redis with automatic TTL expiration (`OTP_EXPIRE_SECONDS`).
-  * **Spam Cooldown Guard**: Enforces a configurable cooldown period (`OTP_RESEND_COOLDOWN_SECONDS`) between successive resend requests.
-  * **Hourly Request Ceiling**: Limits maximum OTP requests per email (`OTP_MAX_REQUESTS_PER_HOUR`) to prevent abuse and API exhaustion.
-  * **Anti-Brute Force Lockout**: Tracks failed verification attempts. After `OTP_MAX_VERIFY_ATTEMPTS` incorrect attempts, the OTP is destroyed and the email is locked out for `OTP_LOCKOUT_SECONDS` with an HTTP `429 Too Many Requests`.
-* **Google OAuth2 Authentication**: Decoupled verification of Google ID tokens using official Google public certificates, with automated account provisioning and profile synchronization.
-* **User-Scoped Data Storage**: SQLAlchemy `User` model with relational binding to `Document`, `ChatSession`, and `ChatMessage` records (`user_id` foreign key).
+### 1. 3-Tier Role-Based Access Control (RBAC) & Tokenized Invitations
+
+| Role | Badge | Permissions |
+| :--- | :--- | :--- |
+| **Super Admin** | `👑 Super Admin` | **Root Owner** (`DEVELOPER_EMAILS`). Can invite **Admins & Members**, revoke any team member, and cannot be revoked or demoted by anyone. |
+| **Admin** | `🛡️ Admin` | **Team Administrator**. Can invite **Members**, run benchmarks, and revoke Members. Cannot revoke Super Admin or other Admins. |
+| **Member** | `💻 Member` | **Developer / Analyst**. Can execute benchmarks, inspect granular claim evaluations, and view scorecards. Cannot invite or revoke team members. |
+
+#### Tokenized Invitation & Security Policy:
+1. **Inviting Teammates**: Inviter selects `Member` or `Admin` role in the Developer Team modal.
+2. **Secure 48-Hour Token Generation**: Generates a 32-byte URL-safe secret token (`/accept-invite?token=...`) stored with `status="PENDING"` and an automatic **48-hour expiration timestamp**. The user is **NOT** promoted until accepted.
+3. **Strict Recipient Validation**: The invitation link is cryptographically bound to the invited email address. Even if another authenticated user intercepts or opens the link, the backend rejects acceptance with `403 Forbidden` (`Security Policy: This invitation was generated exclusively for '<email>'`).
+4. **Interactive Acceptance**: Invitee signs in with the matching email and clicks **"Accept & Join Team"** to activate developer privileges.
+5. **Real-Time Synchronization**: Broadcasts `DEVELOPER_INVITED`, `DEVELOPER_JOINED`, and `DEVELOPER_REVOKED` over WebSockets to sync presence and membership across all open browser sessions without refreshing.
 
 ---
 
-### 2. Multi-Format Data Ingestion Engine & Dynamic Live Progress Stream
-* **10+ Supported Formats**: Native parsing for PDF, Markdown, DOCX, CSV, TSV, Excel (`.xlsx`, `.xls`), HTML, JSON, PPTX, XML, and TXT via `ParserRegistry`.
-* **Dynamic Layman SSE Stream (`POST /api/v1/ingest/stream`)**: Calculates and streams dynamic, genuine progress based on page counts and embedding batches in friendly layman terms (e.g. *"Teaching AI concepts (16 of 42 sections learned)..."*).
-* **Hybrid PDF Parsing**: Scans pages with `pdfplumber` to route complex tables to `hi_res` OCR and simple pages to `fast` extraction.
-* **Semantic & Format-Specific Chunking**: Strict sheet boundary isolation for Excel, heading breadcrumb hierarchies (`# H1 > ## H2`) for Markdown/DOCX, and slide-level isolation for PPTX.
-* **Idempotency & Resumability**: SHA-256 file hashing, config hash drift protection, and atomic document leases.
+### 2. Multi-Provider & BYOK (Bring Your Own Key) Architecture
+* **Dual-Access Modes**:
+  * **Inbuilt System Chain**: Zero-configuration default with Google Gemini (`gemini-2.5-flash`) and resilient Groq failover (`qwen/qwen3.8-27b` and `openai/gpt-oss-120b`).
+  * **Bring Your Own Key (BYOK)**: Users can register personal API keys for **Google Gemini**, **Groq**, **OpenAI** (`gpt-4o`, `gpt-4o-mini`, `o3-mini`), **Anthropic** (`claude-3-5-sonnet`, `claude-3-5-haiku`), **DeepSeek** (`deepseek-chat`, `deepseek-reasoner`), **Mistral**, **OpenRouter**, or any custom **OpenAI-compatible / Ollama** endpoint.
+* **Encrypted Key Vault**: User API keys are encrypted at rest with AES-256 Fernet symmetric cryptography. Plaintext keys are never logged or exposed in API payloads (only safe masked hints like `sk-...cdef`).
+* **Per-Session Dynamic Model Selection**: Users can switch models and providers on the fly per chat session or per message.
 
 ---
 
-### 3. Stateful LangGraph RAG Agent & Two-Stage Retrieval
-* **8-Node Stateful LangGraph Workflow**:
-  1. **Summarizer Node**: Progressively condenses multi-turn conversations into a running cumulative summary when history $\ge 4$ messages so zero long-range context is truncated.
-  2. **Input Guardrail Node**: Real-time evaluation against prompt injection signatures, DAN bypasses, and adversarial overrides before routing.
-  3. **Router Node**: High-precision classification directing factual/document inquiries to vector retrieval vs. small-talk pleasantries to direct conversation.
-  4. **Query Rewriter Node**: Resolves conversational pronouns and context across prior turns into compact, high-signal standalone search queries.
-  5. **Stage 1 Vector Retriever Node**: Wide-pool candidate search (`top_k = 20`) over PostgreSQL `document_chunks` using `BAAI/bge-m3` 1024-dimensional embeddings.
-  6. **Stage 2 Cross-Encoder Reranker Node**: Deep cross-attention relevance scoring via **`BAAI/bge-reranker-v2-m3`** (with fast Groq listwise fallback) to isolate the top 5 highest-precision chunks.
-  7. **Document Grader Node**: Evaluates candidate chunks concurrently with Groq LLM (`asyncio.gather`) to filter out noise before generation.
-  8. **Grounded Generator & Dynamic Fallback**: Synthesizes structured markdown tables and executive summaries strictly from verified context, or triggers dynamic context-aware refusals if no matching documents exist.
-  9. **Hallucination Guardrail Node**: Post-generation verification auditing every claim and numerical figure against full chunk text to guarantee $100\%$ factual fidelity.
-* **Server-Sent Events (SSE) Streaming (`POST /api/v1/chat/stream`)**:
-  * **Live Thought Tracing (`event: trace`)**: Streams active reasoning thoughts (e.g. *"Searching vector database for high-similarity document excerpts..."*, *"Cross-encoder reranking candidate excerpts..."*, *"Verified 5 relevant excerpts (Score: 100%)"*).
-  * **Real-time LLM Tokens (`event: token`)**: Sub-second token delivery directly to the client from generator nodes.
-  * **Structured Source Citations (`event: citations`)**: Returns verified file names, page numbers, and text previews.
-* **Intelligent Semantic Titling**: Generates concise 3-to-6 word titles for conversations using the LLM without hard character slicing.
-* **Persistent PostgreSQL Conversation Store**: `chat_sessions` and `chat_messages` tables store full message histories, citations, and routing paths scoped to `user_id`.
+### 3. Continuous RAGAs Automated Quality Benchmark Suite
+* **Synthetic QA Synthesis**: Generates diverse, document-grounded evaluation questions and synthetic ground truth answers across indexed vector stores.
+* **5-Dimensional Quality Scorecard**:
+  * **Overall RAG Score**: Composite weighted score of context entailment, relevance, precision, and recall.
+  * **Faithfulness (0–100%)**: Verifies zero hallucinations by ensuring all generated statements are strictly entailed by retrieved context chunks.
+  * **Answer Relevance (0–100%)**: Measures how directly and concisely the answer addresses the user query.
+  * **Context Precision (0–100%)**: Evaluates whether the most relevant document chunks are ranked at the top (Rank #1).
+  * **Context Recall (0–100%)**: Measures fact coverage against synthetic reference ground truths.
+* **Atomic Claim Verification Audit**: Breaks every generated answer into individual atomic sentences and audits each for context groundedness with granular reasoning.
 
 ---
 
-## Tech Stack
-
-| Component | Technology |
-| :--- | :--- |
-| **Language & Runtime** | Python 3.10+ / `uv` |
-| **Web Framework** | FastAPI |
-| **Agentic Framework** | LangGraph / LangChain Core |
-| **Database ORM** | SQLAlchemy 2.0 (with `pgvector`) |
-| **Database & Vector Store** | PostgreSQL (Supabase Cloud) |
-| **Cache & OTP Engine** | Redis 5.0+ |
-| **Security & Auth** | PyJWT, bcrypt, Google Auth, HttpOnly Cookies |
-| **Embeddings Model** | Hugging Face Inference API (`BAAI/bge-m3` 1024-dim) |
-| **Reranker Engine** | `BAAI/bge-reranker-v2-m3` + Groq Flash Listwise Fallback |
-| **LLM Inference** | Groq API (`llama-3.3-70b-versatile` / `gpt-oss-20b`, `temp=0.2`) |
-| **Document Parsers** | `unstructured`, `pdfplumber`, `markdown-it-py`, `pandas`, `python-docx`, `python-pptx`, `beautifulsoup4` |
-| **Testing** | `pytest`, `httpx`, `fakeredis`, `anyio` |
+### 4. Stateful LangGraph RAG Agent (8-Node Pipeline)
+* **Progressive History Summarization**: Incrementally condenses extended conversation history to maintain contextual memory without exceeding token ceilings.
+* **Security & Prompt Injection Guardrail**: Sanitizes inputs and rejects adversarial prompt injection attempts.
+* **Semantic Intent Router**: Intelligently routes queries between vector search, direct synthesis, or clarification flows.
+* **Contextual Query Rewriting**: Resolves pronouns, co-references, and missing context before vector retrieval.
+* **Stage 1 Vector Retrieval**: Queries pgvector embeddings (`BAAI/bge-m3`) with top-k recall.
+* **Stage 2 Cross-Encoder Reranker**: Rescores retrieved passages with `BAAI/bge-reranker-v2-m3` to eliminate irrelevant noise.
+* **Parallel Document Grader**: Concurrently verifies chunk relevance using `asyncio.gather`.
+* **Grounded Answer Generator & Inline Citations**: Synthesizes verified answers with page-level citations.
 
 ---
 
-## Project Structure
-
-```text
-rag_backend/
-├── app/
-│   ├── api/
-│   │   ├── routes/
-│   │   │   ├── auth.py             # Auth endpoints (signup, verify-otp, login, google, me, logout)
-│   │   │   ├── chat.py             # Stateful LangGraph RAG & SSE streaming endpoints
-│   │   │   └── ingest.py           # Dynamic SSE document upload, list & delete endpoints
-│   │   ├── deps.py                 # FastAPI dependencies (get_current_user from HttpOnly cookies)
-│   │   └── router.py               # API root router (/api/v1)
-│   ├── core/
-│   │   ├── config.py               # Pydantic Settings (.env validator)
-│   │   ├── redis_client.py         # Redis connection pool & healthcheck
-│   │   └── security.py             # bcrypt hashing, JWT encode/decode, cookie managers
-│   ├── db/
-│   │   └── session.py              # SQLAlchemy database engine, session maker & auto-migrations
-│   ├── models/
-│   │   ├── chat.py                 # ChatSession and ChatMessage models
-│   │   ├── document.py             # Document & DocumentChunk models (with pgvector)
-│   │   ├── document_element.py     # Structured parser document elements
-│   │   └── user.py                 # User model (auth_provider, verification, timestamps)
-│   ├── schemas/
-│   │   ├── chat_schemas.py         # Pydantic request/response schemas for RAG chat
-│   │   ├── rag_state.py            # TypedDict state schema for LangGraph workflow
-│   │   └── user.py                 # Pydantic request/response validation schemas
-│   ├── scripts/
-│   │   └── ingest.py               # CLI ingestion & validation runner
-│   ├── services/
-│   │   ├── parsers/                # Extensible format-specific parsers (PDF, CSV, MD, Excel, etc.)
-│   │   ├── rag/                    # Stateful LangGraph RAG Agent System
-│   │   │   ├── nodes/              # Specialized async graph nodes (router, rewriter, grader, etc.)
-│   │   │   ├── graph.py            # Compiled LangGraph state graph workflow
-│   │   │   ├── llm.py              # Groq LLM factory & async title generator
-│   │   │   └── prompts.py          # System prompts for reasoning, grading, and summarization
-│   │   ├── auth_service.py         # Authentication & registration workflows
-│   │   ├── classifier.py           # PDF page complexity classifier
-│   │   ├── email_service.py        # Asynchronous SMTP / development console logger
-│   │   ├── embeddings.py           # Hugging Face BAAI/bge-m3 embeddings factory
-│   │   ├── google_auth_service.py    # Google ID token signature verifier
-│   │   ├── ingestion_service.py    # Dynamic layman SSE upload & embedding pipeline
-│   │   ├── otp_service.py          # Redis-backed OTP rate limiter & validator
-│   │   └── validator.py            # Chunk coverage & integrity analyzer
-│   └── main.py                     # FastAPI application entrypoint & lifespan
-├── data/
-│   └── uploads/                    # Storage for source documents
-├── tests/
-│   └── test_auth.py                # Unit and integration test suite
-├── .env.example                    # Environment variables template
-├── pytest.ini                      # Pytest configuration
-├── requirements.txt                # Project dependencies
-└── README.md                       # Project documentation
-```
+### 5. Multi-Format Data Ingestion Engine
+* **10+ Supported File Formats**: PDF, Markdown, DOCX, CSV, TSV, Excel (`.xlsx`, `.xls`), HTML, JSON, PPTX, XML, and TXT via `ParserRegistry`.
+* **Dynamic Layman SSE Stream (`POST /api/v1/ingest/stream`)**: Calculates and streams genuine ingestion progress in real time (e.g. *"Teaching AI concepts (16 of 42 sections learned)..."*).
+* **Hybrid PDF OCR**: Dynamically switches between `pdfplumber` fast text parsing and `unstructured` OCR table extraction.
 
 ---
 
-## API Reference
+## API Endpoints
 
-### Base URL: `http://localhost:2001/api/v1`
-
-#### 1. Authentication Endpoints (`/auth`)
+### Authentication & RBAC (`/api/v1/auth`)
 | Method | Endpoint | Description | Auth Required |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/auth/signup` | Register new account and dispatch 6-digit OTP | No |
-| `POST` | `/auth/verify-otp` | Validate OTP code, activate user, and set `HttpOnly` cookie | No |
-| `POST` | `/auth/resend-otp` | Request a fresh OTP (enforces cooldown & hourly limits) | No |
-| `POST` | `/auth/login` | Login with email & password and set `HttpOnly` cookie | No |
-| `POST` | `/auth/google` | Sign in / sign up using Google OAuth2 ID token | No |
-| `GET` | `/auth/me` | Fetch currently authenticated user profile | **Yes (Cookie)** |
-| `POST` | `/auth/logout` | Clear authentication session cookie | No |
+| `POST` | `/api/v1/auth/signup` | Register new account and send 6-digit OTP | Public |
+| `POST` | `/api/v1/auth/verify-otp` | Verify OTP and set HttpOnly session cookie | Public |
+| `POST` | `/api/v1/auth/resend-otp` | Resend verification OTP (rate limited) | Public |
+| `POST` | `/api/v1/auth/login` | Email/password login | Public |
+| `POST` | `/api/v1/auth/google` | Google OAuth2 ID token authentication | Public |
+| `POST` | `/api/v1/auth/logout` | Clear session cookie | Authenticated |
+| `GET` | `/api/v1/auth/me` | Fetch active user profile and developer role | Authenticated |
+| `GET` | `/api/v1/auth/developers` | List active developers and pending invitations | Developer |
+| `POST` | `/api/v1/auth/invite-developer` | Send tokenized invitation email with role | Admin / Super Admin |
+| `GET` | `/api/v1/auth/verify-invite` | Verify invitation token | Public |
+| `POST` | `/api/v1/auth/accept-invite` | Accept invitation and activate developer role | Authenticated |
+| `POST` | `/api/v1/auth/manage-developer` | Revoke developer access or cancel pending invite | Admin / Super Admin |
 
-#### 2. Agentic RAG Chat Endpoints (`/chat`)
+### Model Providers & BYOK Vault (`/api/v1/models`)
 | Method | Endpoint | Description | Auth Required |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/chat/stream` | Stream RAG responses with live thought tracing & tokens via SSE | **Yes (Cookie)** |
-| `POST` | `/chat` | Synchronous JSON fallback endpoint for RAG queries | **Yes (Cookie)** |
-| `GET` | `/chat/sessions` | List all conversation sessions with message counts | **Yes (Cookie)** |
-| `GET` | `/chat/sessions/{session_id}` | Get full conversation history and structured citations | **Yes (Cookie)** |
-| `DELETE` | `/chat/sessions/{session_id}` | Delete a chat session and all historical messages | **Yes (Cookie)** |
+| `GET` | `/api/v1/models` | List all supported models and active provider configuration status | Public / Optional Auth |
+| `GET` | `/api/v1/models/keys` | List user's encrypted provider keys (Masked `sk-...cdef`) | Authenticated |
+| `POST` | `/api/v1/models/keys` | Save or update an encrypted API key for a provider | Authenticated |
+| `DELETE` | `/api/v1/models/keys/{provider}` | Revoke and delete a configured provider key | Authenticated |
+| `POST` | `/api/v1/models/test-connection` | Test live communication and measure latency for an API key | Public / Optional Auth |
 
-#### 3. Ingestion & Document Processing (`/ingest`)
+### RAG Evaluation Suite (`/api/v1/eval`)
 | Method | Endpoint | Description | Auth Required |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/ingest/stream` | Upload document and stream live dynamic progress via SSE | **Yes (Cookie)** |
-| `GET` | `/ingest/documents` | List all user-uploaded documents and chunk counts | **Yes (Cookie)** |
-| `DELETE` | `/ingest/documents/{document_id}` | Delete a document and its pgvector embeddings | **Yes (Cookie)** |
+| `GET` | `/api/v1/eval/runs` | List historical benchmark runs with scores | Developer |
+| `GET` | `/api/v1/eval/runs/{run_id}` | Deep-dive granular test cases & claim audits | Developer |
+| `POST` | `/api/v1/eval/runs` | Trigger dynamic multi-document RAG benchmark | Developer |
+| `DELETE` | `/api/v1/eval/runs/{run_id}` | Permanently delete evaluation run and test cases | Developer |
 
-#### 4. Health Check
+### Real-Time WebSockets (`/ws`)
+| Protocol | Endpoint | Description | Auth Required |
+| :--- | :--- | :--- | :--- |
+| `WS` | `/ws/developer-team` | Real-time presence, invitation, and team sync hub | Developer (Cookie/JWT) |
+
+### Chat & Ingestion (`/api/v1/chat`, `/api/v1/ingest`)
 | Method | Endpoint | Description | Auth Required |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/health` | Server health check and status | No |
+| `POST` | `/api/v1/chat/message` | Send message through LangGraph RAG pipeline | Authenticated |
+| `GET` | `/api/v1/chat/sessions` | List user chat sessions | Authenticated |
+| `POST` | `/api/v1/ingest/upload` | Upload and ingest document file | Authenticated |
+| `POST` | `/api/v1/ingest/stream` | Stream dynamic Layman SSE ingestion progress | Authenticated |
+| `GET` | `/api/v1/ingest/documents` | List indexed documents and chunk statistics | Authenticated |
+| `DELETE` | `/api/v1/ingest/documents/{id}` | Delete document and vector chunks from pgvector | Authenticated |
 
 ---
 
-## Server-Sent Events (SSE) Protocol
-
-### Chat Streaming (`POST /api/v1/chat/stream`)
-The chat stream emits the following structured events:
-* `event: metadata` $\rightarrow$ `{"session_id": "...", "title": "...", "is_new_session": true}`
-* `event: trace` $\rightarrow$ `{"step": "retriever", "status": "active" | "done", "thought": "Searching vector database..."}`
-* `event: node_status` $\rightarrow$ `{"node": "router", "status": "started" | "completed", "route": "vectorstore"}`
-* `event: token` $\rightarrow$ `{"text": "The Q3 operating margin was..."}`
-* `event: citations` $\rightarrow$ `{"citations": [{"filename": "Financials.xlsx", "page_number": 1, ...}]}`
-* `event: done` $\rightarrow$ `{"session_id": "...", "title": "...", "route_taken": "vectorstore"}`
-
-### Ingestion Progress Streaming (`POST /api/v1/ingest/stream`)
-The ingestion stream emits live progress calculated from page count and batch embeddings:
-* `event: progress` $\rightarrow$ `{"percent": 68, "stage": "embedding", "message": "Teaching AI concepts (16 of 42 sections learned)..."}`
-* `event: done` $\rightarrow$ `{"percent": 100, "status": "completed", "message": "Ready to chat!"}`
-* `event: error` $\rightarrow$ `{"error": "...", "message": "..."}`
-
----
-
-## Getting Started
+## Local Setup & Development
 
 ### 1. Prerequisites
-- [Python 3.10+](https://www.python.org/)
-- [`uv`](https://github.com/astral-sh/uv) (recommended package and project manager)
-- [Redis](https://redis.io/) running locally or via cloud (e.g. Upstash)
+* **Python 3.10+** (or `uv` package manager)
+* **PostgreSQL** with `pgvector` extension enabled (or Supabase instance)
+* **Redis** (Local instance or Redis Cloud)
 
-### 2. Environment Setup
-1. Clone the repository and navigate into `rag_backend`:
-   ```powershell
-   cd "d:\Learning AI\RAG\rag_backend"
-   ```
+### 2. Installation
+```bash
+# Clone the repository
+git clone https://github.com/ShubhamPrajapati1402/rag_backend.git
+cd rag_backend
 
-2. Copy the `.env.example` file to create your `.env`:
-   ```powershell
-   cp .env.example .env
-   ```
-
-3. Configure your variables inside `.env`:
-   ```env
-   # Database (Supabase PostgreSQL)
-   DATABASE_URL="postgresql://postgres.[REF]:[PASSWORD]@aws-0-eu-central-1.pooler.supabase.com:6543/postgres"
-
-   # Server & CORS
-   BACKEND_HOST="0.0.0.0"
-   BACKEND_PORT=2001
-   FRONTEND_URL="http://localhost:1001"
-   CORS_ORIGINS=["http://localhost:1001","http://127.0.0.1:1001"]
-
-   # JWT & Cookies
-   SECRET_KEY="your-super-secret-jwt-key"
-   ALGORITHM="HS256"
-   ACCESS_TOKEN_EXPIRE_MINUTES=10080
-   COOKIE_NAME="auth_token"
-   COOKIE_SECURE=False
-   COOKIE_SAMESITE="lax"
-
-   # Redis & OTP
-   REDIS_URL="redis://localhost:6379/0"
-   OTP_LENGTH=6
-   OTP_EXPIRE_SECONDS=600
-   OTP_RESEND_COOLDOWN_SECONDS=60
-   OTP_MAX_REQUESTS_PER_HOUR=5
-   OTP_MAX_VERIFY_ATTEMPTS=5
-   OTP_LOCKOUT_SECONDS=900
-
-   # Google OAuth
-   GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
-   GOOGLE_CLIENT_SECRET="your-client-secret"
-
-   # Groq & Hugging Face
-   GROQ_API_KEY="gsk_..."
-   GROQ_MODEL_NAME="llama-3.3-70b-versatile"
-   HUGGINGFACE_API_KEY="hf_..."
-   HUGGINGFACE_EMBEDDING_MODEL="BAAI/bge-m3"
-   ```
-
-4. Install dependencies using `uv`:
-   ```powershell
-   uv pip install -r requirements.txt
-   ```
-
----
-
-## Running the Application
-
-### 1. Start the FastAPI Web Server
-```powershell
-uv run python app/main.py
-```
-* **API Documentation (Swagger UI)**: [http://localhost:2001/docs](http://localhost:2001/docs)
-* **Interactive ReDoc**: [http://localhost:2001/redoc](http://localhost:2001/redoc)
-
-### 2. Running Automated Tests
-Run the test suite with `pytest`:
-```powershell
-uv run pytest -v
+# Install dependencies with uv (or pip)
+uv pip install -r requirements.txt
 ```
 
-### 3. Running the Ingestion Engine CLI
-To ingest documents directly into Supabase vector store via terminal:
-```powershell
-uv run python app/scripts/ingest.py "data/uploads/your_document.pdf"
+### 3. Environment Configuration
+Create a `.env` file based on `.env.example`:
+```bash
+cp .env.example .env
+```
+Fill in your API keys for Gemini, Groq, Hugging Face, Supabase, and SMTP.
+
+### 4. Database Initialization & Run
+```bash
+# Start FastAPI backend server on port 2001
+uv run python -m uvicorn app.main:app --host 0.0.0.0 --port 2001 --reload
 ```
 
-#### Benchmark / Dry-Run Mode:
-Extract and validate chunking without writing to the database:
-```powershell
-uv run python app/scripts/ingest.py --validate "data/uploads/your_document.pdf"
+### 5. Running Tests
+```bash
+# Execute test suite
+uv run pytest
 ```

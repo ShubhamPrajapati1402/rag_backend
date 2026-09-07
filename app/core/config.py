@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     # LLM
     GROQ_API_KEY: str
     GROQ_MODEL_NAME: str
+    GROQ_FALLBACK_MODEL_NAME: str
     GEMINI_API_KEY: str
     GEMINI_MODEL_NAME: str
     
@@ -42,6 +43,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
+    DEVELOPER_EMAILS: str = "scprajapati14@gmail.com"
     
     # Cookie Configuration (HttpOnly Sessions)
     COOKIE_NAME: str

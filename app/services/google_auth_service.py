@@ -7,18 +7,24 @@ from app.core.config import settings
 
 class GoogleAuthService:
     @staticmethod
-    def verify_token(token: str) -> Dict[str, Any]:
+    def verify_token(token: Any) -> Dict[str, Any]:
         """
         Verifies the Google OAuth2 ID token using official Google public certificates.
         Returns the parsed token payload containing user email, name, picture, and Google sub ID.
         """
         try:
+            # Handle string or Pydantic model
+            if hasattr(token, "id_token"):
+                raw_token = token.id_token
+            else:
+                raw_token = str(token)
+
             # Prepare Google client ID audience check if configured
             audience = settings.GOOGLE_CLIENT_ID if settings.GOOGLE_CLIENT_ID else None
             
             # Verify the ID token signature and audience
             id_info = id_token.verify_oauth2_token(
-                token,
+                raw_token,
                 requests.Request(),
                 audience=audience
             )
