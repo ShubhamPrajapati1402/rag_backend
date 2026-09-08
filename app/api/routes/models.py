@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from loguru import logger
 
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.user import User
 from app.models.user_api_key import UserAPIKey
@@ -26,15 +27,15 @@ CATALOG_DEFINITIONS = [
     {
         "provider": "inbuilt",
         "name": "Noesis Inbuilt (Free & Resilient)",
-        "description": "Zero configuration multi-tier fallback chain (Google Gemini 2.5 Flash + Groq fallback). Managed directly by backend servers.",
+        "description": "Zero configuration multi-tier fallback chain (Google Gemini + Groq fallback). Managed directly by backend servers.",
         "website_url": "https://ai.google.dev",
         "api_key_help_url": "",
         "default_base_url": None,
         "is_inbuilt": True,
         "models": [
             {
-                "id": "gemini-2.5-flash",
-                "name": "Gemini 2.5 Flash (Inbuilt Default)",
+                "id": settings.GEMINI_MODEL_NAME,
+                "name": "Gemini 3.6 Flash (Inbuilt Default)",
                 "description": "Ultra-low latency primary engine with automatic failover to Groq.",
                 "context_window": 1048576,
                 "is_inbuilt": True,
@@ -52,8 +53,8 @@ CATALOG_DEFINITIONS = [
         "is_inbuilt": False,
         "models": [
             {
-                "id": "gemini-2.5-flash",
-                "name": "Gemini 2.5 Flash",
+                "id": "gemini-3.6-flash",
+                "name": "Gemini 3.6 Flash",
                 "description": "High frequency, low latency reasoning.",
                 "context_window": 1048576,
                 "is_inbuilt": False,
@@ -331,7 +332,7 @@ def get_models_catalog(
 
     return ModelsCatalogResponse(
         providers=catalog_providers,
-        default_model="gemini-2.5-flash",
+        default_model=settings.GEMINI_MODEL_NAME,
         default_provider="inbuilt"
     )
 

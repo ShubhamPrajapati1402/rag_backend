@@ -83,7 +83,11 @@ async def rerank_with_groq_fallback(query: str, documents: List[Dict[str, Any]])
         f"Candidate Excerpts:\n" + "\n".join(candidates_text)
     )
 
-    llm = get_groq_llm(temperature=0.3)
+    llm = get_groq_llm(
+        temperature=0.1,
+        model_provider="groq",
+        model_name=settings.GROQ_MODEL_NAME
+    )
     response = await llm.ainvoke([
         SystemMessage(content=LISTWISE_RERANK_PROMPT),
         HumanMessage(content=prompt)
@@ -142,14 +146,17 @@ async def reranker_node(state: RAGState) -> dict:
     )
     final_top_docs = sorted_docs[:target_k]
 
-    # Dynamic cross-attention listwise reranker when candidates come from multiple documents
-    if len(documents) > 1:
+    # Dynamic cross-attention listwise reranker ONLY when candidates come from multiple distinct documents
+    unique_doc_ids = {d.get("document_id") for d in documents if d.get("document_id") is not None}
+    if len(unique_doc_ids) > 1 and len(documents) > 5:
         try:
             reranked = await rerank_with_groq_fallback(query, sorted_docs[:10])
             if reranked:
                 final_top_docs = reranked[:target_k]
         except Exception as rerank_err:
             logger.warning(f"[RerankerNode] Fast LLM reranker warning: {rerank_err}. Using RRF order.")
+    else:
+        logger.info(f"[RerankerNode] Single document scope or compact candidate set ({len(unique_doc_ids)} doc(s), {len(documents)} chunks). Fast 0ms RRF ranking.")
 
     logger.info(f"╔══════════════════════════════════════════════════════════════════════════════════════════")
     logger.info(f"║ [RerankerNode] DYNAMIC RERANKED {len(documents)} CANDIDATES -> TOP {len(final_top_docs)} CHUNKS ISOLATED:")
