@@ -2,12 +2,12 @@ import os
 import tempfile
 import time
 from loguru import logger
-from unstructured.partition.pdf import partition_pdf
-from unstructured.chunking.title import chunk_by_title
 from pypdf import PdfReader, PdfWriter
 from app.services.classifier import classify_pdf_pages
 
 def extract_raw_elements(file_path: str, strategy: str = "hi_res", fallback_pages: list = None):
+    from unstructured.partition.pdf import partition_pdf
+    
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"PDF not found at: {file_path}")
         
@@ -126,6 +126,8 @@ def extract_raw_elements(file_path: str, strategy: str = "hi_res", fallback_page
         raise ValueError(f"Unknown strategy or missing parameters: {strategy}")
 
 def create_chunks(elements):
+    from unstructured.chunking.title import chunk_by_title
+    
     chunks = chunk_by_title(
         elements,
         max_characters=1500,
