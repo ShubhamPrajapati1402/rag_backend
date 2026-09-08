@@ -85,15 +85,20 @@ class Settings(BaseSettings):
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def parse_cors_origins(cls, v: Union[List[str], str]) -> List[str]:
+        origins = []
         if isinstance(v, str):
             v_stripped = v.strip()
             if v_stripped.startswith("[") and v_stripped.endswith("]"):
                 try:
-                    return json.loads(v_stripped)
+                    origins = json.loads(v_stripped)
                 except Exception:
-                    pass
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
-        return v
+                    origins = [o.strip() for o in v.split(",") if o.strip()]
+            else:
+                origins = [o.strip() for o in v.split(",") if o.strip()]
+        elif isinstance(v, list):
+            origins = v
+        # Crucial: CORS origins must never have trailing slashes
+        return [str(origin).strip().rstrip("/") for origin in origins if origin]
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
