@@ -3,8 +3,6 @@ import tempfile
 import time
 from typing import List, Dict, Any
 from loguru import logger
-from unstructured.partition.pdf import partition_pdf
-from unstructured.chunking.title import chunk_by_title
 from pypdf import PdfReader, PdfWriter
 
 from app.models.document_element import DocumentElement
@@ -22,6 +20,8 @@ class PDFParser(BaseParser):
         self._cached_raw_elements = None # Store raw unstructured elements for chunking and validation
 
     def parse(self, file_path: str, **kwargs) -> List[DocumentElement]:
+        from unstructured.partition.pdf import partition_pdf
+        
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"PDF not found at: {file_path}")
             
@@ -148,6 +148,8 @@ class PDFParser(BaseParser):
         return doc_elements
 
     def chunk(self, elements: List[DocumentElement]) -> List[Dict[str, Any]]:
+        from unstructured.chunking.title import chunk_by_title
+        
         if not self._cached_raw_elements:
             raise RuntimeError("PDF chunking requires _cached_raw_elements from parse(). Call parse() first.")
             
