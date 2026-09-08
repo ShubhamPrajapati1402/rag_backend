@@ -27,7 +27,6 @@ langchain-huggingface>=0.0.1
 langgraph>=0.0.20
 groq>=0.10.0
 google-genai>=1.0.0
-sentence-transformers>=3.0.0
 requests>=2.31.0
 
 # Voice & Speech (STT & TTS)
@@ -36,8 +35,7 @@ edge-tts>=7.0.0
 # Document Parsers, Layout Analysis & OCR
 pypdf>=4.0.0
 pdfplumber>=0.10.0
-unstructured[all-docs]>=0.12.0
-unstructured-inference>=0.8.0
+unstructured>=0.12.0
 pdf2image>=1.17.0
 pytesseract>=0.3.10
 pandas>=2.0.0
