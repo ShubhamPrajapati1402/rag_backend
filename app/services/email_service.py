@@ -1,14 +1,67 @@
-from email.message import EmailMessage
 from typing import Optional
 from loguru import logger
-import aiosmtplib
+import httpx
 from app.core.config import settings
 
 class EmailService:
     @staticmethod
+    async def _send_via_brevo(
+        to_email: str,
+        subject: str,
+        html_content: str,
+        text_content: str,
+        from_name: Optional[str] = None
+    ) -> bool:
+        """
+        Dispatches email via Brevo REST API over HTTPS (Port 443).
+        Allows delivering OTPs to ANY recipient without requiring a custom domain.
+        """
+        if not settings.BREVO_API_KEY:
+            return False
+
+        sender_name = from_name or settings.EMAILS_FROM_NAME or "Noesis"
+        from_email = settings.EMAILS_FROM_EMAIL or "applicationtesting1402@gmail.com"
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.post(
+                    "https://api.brevo.com/v3/smtp/email",
+                    headers={
+                        "api-key": settings.BREVO_API_KEY.strip(),
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                    },
+                    json={
+                        "sender": {
+                            "name": sender_name,
+                            "email": from_email,
+                        },
+                        "to": [
+                            {
+                                "email": to_email,
+                                "name": to_email.split("@")[0],
+                            }
+                        ],
+                        "subject": subject,
+                        "htmlContent": html_content,
+                        "textContent": text_content,
+                    },
+                )
+                if res.status_code in (200, 201):
+                    res_data = res.json()
+                    logger.info(f"Successfully dispatched email via Brevo API to {to_email} (MessageID: {res_data.get('messageId')})")
+                    return True
+                else:
+                    logger.error(f"Brevo API error sending to {to_email}: {res.status_code} - {res.text}")
+                    return False
+        except Exception as e:
+            logger.error(f"Brevo HTTP request exception to {to_email}: {e}")
+            return False
+
+    @staticmethod
     async def send_otp_email(to_email: str, otp_code: str, full_name: Optional[str] = None) -> bool:
         """
-        Sends OTP verification email via SMTP with a bulletproof, rich table-based email template.
+        Sends OTP verification email via Resend HTTP API or SMTP with a bulletproof, rich table-based email template.
         """
         subject = f"Your Verification Code: {otp_code} — Noesis"
         display_name = full_name or to_email.split("@")[0]
@@ -99,34 +152,16 @@ The Noesis Platform Team
         logger.info(f" [DEV EMAIL OTP] Destination: {to_email} | OTP: {otp_code}")
         logger.info(f"============================================================")
 
-        if settings.SMTP_HOST and settings.SMTP_PORT and settings.SMTP_USER and settings.SMTP_PASSWORD:
-            try:
-                message = EmailMessage()
-                from_addr = settings.EMAILS_FROM_EMAIL or settings.SMTP_USER
-                from_name = settings.EMAILS_FROM_NAME or "Noesis Auth"
-                message["From"] = f"{from_name} <{from_addr}>"
-                message["To"] = to_email
-                message["Subject"] = subject
-                message.set_content(body_text)
-                message.add_alternative(html_content, subtype="html")
+        if settings.BREVO_API_KEY:
+            return await EmailService._send_via_brevo(
+                to_email=to_email,
+                subject=subject,
+                html_content=html_content,
+                text_content=body_text,
+                from_name="Noesis Auth"
+            )
 
-                smtp_pw = settings.SMTP_PASSWORD.replace(" ", "").strip()
-                is_ssl = (settings.SMTP_PORT == 465)
-                await aiosmtplib.send(
-                    message,
-                    hostname=settings.SMTP_HOST,
-                    port=settings.SMTP_PORT,
-                    username=settings.SMTP_USER,
-                    password=smtp_pw,
-                    use_tls=is_ssl,
-                    start_tls=(not is_ssl)
-                )
-                logger.info(f"Successfully dispatched OTP email via SMTP to {to_email}")
-                return True
-            except Exception as e:
-                logger.error(f"Failed to send email via SMTP to {to_email}: {e}")
-                return False
-
+        logger.warning(f"BREVO_API_KEY not configured. OTP email for {to_email} logged only (Dev mode).")
         return True
 
     @staticmethod
@@ -228,34 +263,16 @@ The Noesis Platform Team
         logger.info(f" [DEV WELCOME EMAIL] Sent to: {to_email}")
         logger.info(f"============================================================")
 
-        if settings.SMTP_HOST and settings.SMTP_PORT and settings.SMTP_USER and settings.SMTP_PASSWORD:
-            try:
-                message = EmailMessage()
-                from_addr = settings.EMAILS_FROM_EMAIL or settings.SMTP_USER
-                from_name = settings.EMAILS_FROM_NAME or "Noesis"
-                message["From"] = f"{from_name} <{from_addr}>"
-                message["To"] = to_email
-                message["Subject"] = subject
-                message.set_content(body_text)
-                message.add_alternative(html_content, subtype="html")
+        if settings.BREVO_API_KEY:
+            return await EmailService._send_via_brevo(
+                to_email=to_email,
+                subject=subject,
+                html_content=html_content,
+                text_content=body_text,
+                from_name="Noesis"
+            )
 
-                smtp_pw = settings.SMTP_PASSWORD.replace(" ", "").strip()
-                is_ssl = (settings.SMTP_PORT == 465)
-                await aiosmtplib.send(
-                    message,
-                    hostname=settings.SMTP_HOST,
-                    port=settings.SMTP_PORT,
-                    username=settings.SMTP_USER,
-                    password=smtp_pw,
-                    use_tls=is_ssl,
-                    start_tls=(not is_ssl)
-                )
-                logger.info(f"Successfully dispatched Welcome email via SMTP to {to_email}")
-                return True
-            except Exception as e:
-                logger.error(f"Failed to send welcome email via SMTP to {to_email}: {e}")
-                return False
-
+        logger.warning(f"BREVO_API_KEY not configured. Welcome email for {to_email} logged only (Dev mode).")
         return True
 
     @staticmethod
@@ -498,32 +515,14 @@ The Noesis Platform Team
         logger.info(f" [DEV DEVELOPER INVITE EMAIL] Sent to: {to_email} | Role: {role_label} | URL: {accept_url}")
         logger.info(f"============================================================")
 
-        if settings.SMTP_HOST and settings.SMTP_PORT and settings.SMTP_USER and settings.SMTP_PASSWORD:
-            try:
-                message = EmailMessage()
-                from_addr = settings.EMAILS_FROM_EMAIL or settings.SMTP_USER
-                from_name = settings.EMAILS_FROM_NAME or "Noesis Developer Team"
-                message["From"] = f"{from_name} <{from_addr}>"
-                message["To"] = to_email
-                message["Subject"] = subject
-                message.set_content(body_text)
-                message.add_alternative(html_content, subtype="html")
+        if settings.BREVO_API_KEY:
+            return await EmailService._send_via_brevo(
+                to_email=to_email,
+                subject=subject,
+                html_content=html_content,
+                text_content=body_text,
+                from_name="Noesis Developer Team"
+            )
 
-                smtp_pw = settings.SMTP_PASSWORD.replace(" ", "").strip()
-                is_ssl = (settings.SMTP_PORT == 465)
-                await aiosmtplib.send(
-                    message,
-                    hostname=settings.SMTP_HOST,
-                    port=settings.SMTP_PORT,
-                    username=settings.SMTP_USER,
-                    password=smtp_pw,
-                    use_tls=is_ssl,
-                    start_tls=(not is_ssl)
-                )
-                logger.info(f"Successfully dispatched Developer Invite email via SMTP to {to_email}")
-                return True
-            except Exception as e:
-                logger.error(f"Failed to send developer invite email via SMTP to {to_email}: {e}")
-                return False
-
+        logger.warning(f"BREVO_API_KEY not configured. Developer invite email for {to_email} logged only (Dev mode).")
         return True
