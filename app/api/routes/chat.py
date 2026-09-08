@@ -12,6 +12,7 @@ from loguru import logger
 from app.db.session import get_db, SessionLocal
 from app.models.user import User
 from app.models.chat import ChatSession, ChatMessage
+from app.models.document import Document
 from app.api.deps import get_current_user
 from app.schemas.chat_schemas import (
     ChatRequest,
@@ -30,6 +31,29 @@ router = APIRouter(prefix="/chat", tags=["Agentic RAG Chat"])
 def format_sse(event: str, data: dict) -> str:
     """Helper to format Server-Sent Event payload."""
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+def _resolve_document_ids(db: Session, raw_ids: Optional[list], user_id: int) -> Optional[List[int]]:
+    """Resolves mixed document IDs (integers, digit strings, filenames, or @tags) to database document IDs."""
+    if not raw_ids:
+        return None
+    resolved: List[int] = []
+    for item in raw_ids:
+        if isinstance(item, int):
+            resolved.append(item)
+        elif isinstance(item, str):
+            if item.isdigit():
+                resolved.append(int(item))
+            else:
+                clean_name = item.strip().lstrip("@").strip()
+                if clean_name:
+                    doc = db.query(Document).filter(
+                        (Document.filename.ilike(f"%{clean_name}%") | (Document.filename == clean_name)),
+                        (Document.user_id == user_id) | (Document.user_id.is_(None))
+                    ).first()
+                    if doc and doc.id not in resolved:
+                        resolved.append(doc.id)
+    return resolved if resolved else None
 
 
 @router.post("/stream", summary="Stream RAG Agent responses using Server-Sent Events (SSE)")
@@ -79,6 +103,9 @@ async def stream_chat_message(
         session_id = session.id
         initial_title = session.title
 
+        # Resolve document_ids (integers, strings, or tagged filenames) to valid database IDs
+        resolved_doc_ids = _resolve_document_ids(db, request.document_ids, user_id)
+
         # Load recent message history
         past_messages = db.query(ChatMessage).filter(
             ChatMessage.session_id == session_id
@@ -104,7 +131,7 @@ async def stream_chat_message(
         "relevance_score": 1.0,
         "session_id": session_id,
         "user_id": user_id,
-        "document_ids": request.document_ids,
+        "document_ids": resolved_doc_ids,
         "model_provider": target_provider,
         "model_name": target_model,
         "custom_api_key": request.api_key,
@@ -130,7 +157,7 @@ async def stream_chat_message(
 
             # 1. Fast Redis Q&A Cache Check
             from app.services.rag.cache import RAGCacheService
-            cached_resp = RAGCacheService.get_cached_response(user_id, request.document_ids, request.question)
+            cached_resp = RAGCacheService.get_cached_response(user_id, resolved_doc_ids, request.question)
             if cached_resp:
                 yield format_sse("trace", {
                     "step": "cache",
@@ -356,6 +383,7 @@ async def send_chat_message(
         db.refresh(session)
 
     session_id = session.id
+    resolved_doc_ids = _resolve_document_ids(db, request.document_ids, user_id)
 
     past_messages = db.query(ChatMessage).filter(
         ChatMessage.session_id == session_id
@@ -378,7 +406,7 @@ async def send_chat_message(
         "relevance_score": 1.0,
         "session_id": session_id,
         "user_id": user_id,
-        "document_ids": request.document_ids,
+        "document_ids": resolved_doc_ids,
         "model_provider": target_provider,
         "model_name": target_model,
         "custom_api_key": request.api_key,
