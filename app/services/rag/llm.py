@@ -269,7 +269,7 @@ def get_llm(
 
 
 def get_groq_llm(
-    temperature: float = 0.3,
+    temperature: float = 0.2,
     model_name: Optional[str] = None,
     model_provider: Optional[str] = None,
     api_key: Optional[str] = None,
@@ -277,8 +277,35 @@ def get_groq_llm(
     user_id: Optional[int] = None
 ) -> Any:
     """
-    Universal proxy returning the appropriate LLM instance with provider support.
+    High-Speed Intermediate Node LLM Factory (Sub-200ms latency).
+    Prioritizes Groq LPU for ultra-fast internal tasks (router, rewriter, grader, guardrail),
+    with seamless fallback to standard multi-provider chain.
     """
+    # If custom BYOK provider explicitly specified (e.g. user selected Anthropic/OpenAI)
+    if model_provider and model_provider not in ("inbuilt", "groq", "default"):
+        return get_llm(
+            temperature=temperature,
+            model_provider=model_provider,
+            model_name=model_name,
+            api_key=api_key,
+            base_url=base_url,
+            user_id=user_id
+        )
+
+    # Use ultra-fast Groq LPU (~100-200ms) when Groq API key is present
+    if settings.GROQ_API_KEY:
+        groq_model = model_name or settings.GROQ_MODEL_NAME or settings.GROQ_FALLBACK_MODEL_NAME or "openai/gpt-oss-120b"
+        fast_groq = ChatGroq(
+            model_name=groq_model,
+            groq_api_key=settings.GROQ_API_KEY,
+            temperature=temperature,
+            timeout=10.0,
+            max_retries=1
+        )
+        # Fallback to general LLM if Groq rate limit is encountered
+        gemini_fallback = get_llm(temperature=temperature, model_provider="inbuilt")
+        return fast_groq.with_fallbacks([gemini_fallback])
+
     return get_llm(
         temperature=temperature,
         model_provider=model_provider,
