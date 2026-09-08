@@ -111,13 +111,15 @@ The Noesis Platform Team
                 message.add_alternative(html_content, subtype="html")
 
                 smtp_pw = settings.SMTP_PASSWORD.replace(" ", "").strip()
+                is_ssl = (settings.SMTP_PORT == 465)
                 await aiosmtplib.send(
                     message,
                     hostname=settings.SMTP_HOST,
                     port=settings.SMTP_PORT,
                     username=settings.SMTP_USER,
                     password=smtp_pw,
-                    start_tls=True if settings.SMTP_PORT == 587 else False
+                    use_tls=is_ssl,
+                    start_tls=(not is_ssl)
                 )
                 logger.info(f"Successfully dispatched OTP email via SMTP to {to_email}")
                 return True
@@ -238,13 +240,15 @@ The Noesis Platform Team
                 message.add_alternative(html_content, subtype="html")
 
                 smtp_pw = settings.SMTP_PASSWORD.replace(" ", "").strip()
+                is_ssl = (settings.SMTP_PORT == 465)
                 await aiosmtplib.send(
                     message,
                     hostname=settings.SMTP_HOST,
                     port=settings.SMTP_PORT,
                     username=settings.SMTP_USER,
                     password=smtp_pw,
-                    start_tls=True if settings.SMTP_PORT == 587 else False
+                    use_tls=is_ssl,
+                    start_tls=(not is_ssl)
                 )
                 logger.info(f"Successfully dispatched Welcome email via SMTP to {to_email}")
                 return True
@@ -506,13 +510,15 @@ The Noesis Platform Team
                 message.add_alternative(html_content, subtype="html")
 
                 smtp_pw = settings.SMTP_PASSWORD.replace(" ", "").strip()
+                is_ssl = (settings.SMTP_PORT == 465)
                 await aiosmtplib.send(
                     message,
                     hostname=settings.SMTP_HOST,
                     port=settings.SMTP_PORT,
                     username=settings.SMTP_USER,
                     password=smtp_pw,
-                    start_tls=True if settings.SMTP_PORT == 587 else False
+                    use_tls=is_ssl,
+                    start_tls=(not is_ssl)
                 )
                 logger.info(f"Successfully dispatched Developer Invite email via SMTP to {to_email}")
                 return True
