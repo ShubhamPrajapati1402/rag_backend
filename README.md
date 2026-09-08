@@ -30,7 +30,7 @@ flowchart TB
         BcryptHandler["Password Hashing (bcrypt)"]
         GoogleOAuth["Google ID Token Verifier"]
         OTPManager["Redis OTP Engine (Rate Limited)"]
-        EmailService["Async SMTP (OTP & Tokenized Invites)"]
+        EmailService["Email Dispatcher (Brevo REST API)"]
         WSManager["Redis Pub/Sub Connection Manager"]
     end
 
@@ -182,6 +182,7 @@ flowchart TB
 * **Super Admin (`👑`)**: Root platform owner defined in `DEVELOPER_EMAILS`. Can manage team roles and run benchmarks.
 * **Admin (`🛡️`)**: Team administrator. Can invite members with tokenized 48-hour links (`/api/v1/auth/invite-developer`).
 * **Member (`💻`)**: Analyst / Developer. Can execute RAGAs benchmarks and audit atomic claim scorecards.
+* **Cloud Email Dispatcher**: Uses **Brevo REST API** over HTTPS (Port 443) for delivering OTPs and team invites to any public recipient without domain requirements.
 * **Real-Time WebSocket Sync (`/ws/developer-team`)**: Synchronizes team presence and role changes in real time across active clients.
 
 ---
@@ -273,6 +274,11 @@ GROQ_FALLBACK_MODEL_NAME="openai/gpt-oss-20b"
 # Voice Layer (STT & TTS)
 VOICE_STT_MODEL="whisper-large-v3-turbo"
 VOICE_DEFAULT_TTS_VOICE="en-US-ChristopherNeural"
+
+# Email Dispatch (Brevo REST API)
+BREVO_API_KEY="xkeysib-..."
+EMAILS_FROM_EMAIL="applicationtesting1402@gmail.com"
+EMAILS_FROM_NAME="Noesis"
 ```
 
 ### 4. Running the Server

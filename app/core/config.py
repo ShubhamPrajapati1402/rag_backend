@@ -70,11 +70,8 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: Optional[str] = None
     GOOGLE_CLIENT_SECRET: Optional[str] = None
     
-    # Email (SMTP)
-    SMTP_HOST: Optional[str] = None
-    SMTP_PORT: Optional[int] = None
-    SMTP_USER: Optional[str] = None
-    SMTP_PASSWORD: Optional[str] = None
+    # Email (Brevo REST API)
+    BREVO_API_KEY: Optional[str] = None
     EMAILS_FROM_EMAIL: Optional[str] = None
     EMAILS_FROM_NAME: Optional[str] = None
     
