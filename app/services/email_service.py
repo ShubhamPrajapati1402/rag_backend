@@ -110,12 +110,13 @@ The Noesis Platform Team
                 message.set_content(body_text)
                 message.add_alternative(html_content, subtype="html")
 
+                smtp_pw = settings.SMTP_PASSWORD.replace(" ", "").strip()
                 await aiosmtplib.send(
                     message,
                     hostname=settings.SMTP_HOST,
                     port=settings.SMTP_PORT,
                     username=settings.SMTP_USER,
-                    password=settings.SMTP_PASSWORD,
+                    password=smtp_pw,
                     start_tls=True if settings.SMTP_PORT == 587 else False
                 )
                 logger.info(f"Successfully dispatched OTP email via SMTP to {to_email}")
@@ -236,12 +237,13 @@ The Noesis Platform Team
                 message.set_content(body_text)
                 message.add_alternative(html_content, subtype="html")
 
+                smtp_pw = settings.SMTP_PASSWORD.replace(" ", "").strip()
                 await aiosmtplib.send(
                     message,
                     hostname=settings.SMTP_HOST,
                     port=settings.SMTP_PORT,
                     username=settings.SMTP_USER,
-                    password=settings.SMTP_PASSWORD,
+                    password=smtp_pw,
                     start_tls=True if settings.SMTP_PORT == 587 else False
                 )
                 logger.info(f"Successfully dispatched Welcome email via SMTP to {to_email}")
@@ -503,12 +505,13 @@ The Noesis Platform Team
                 message.set_content(body_text)
                 message.add_alternative(html_content, subtype="html")
 
+                smtp_pw = settings.SMTP_PASSWORD.replace(" ", "").strip()
                 await aiosmtplib.send(
                     message,
                     hostname=settings.SMTP_HOST,
                     port=settings.SMTP_PORT,
                     username=settings.SMTP_USER,
-                    password=settings.SMTP_PASSWORD,
+                    password=smtp_pw,
                     start_tls=True if settings.SMTP_PORT == 587 else False
                 )
                 logger.info(f"Successfully dispatched Developer Invite email via SMTP to {to_email}")
