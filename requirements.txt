@@ -35,6 +35,8 @@ edge-tts>=7.0.0
 # Document Parsers, Layout Analysis & OCR
 pypdf>=4.0.0
 pdfplumber>=0.10.0
+pdfminer.six>=20221105
+pi_heif>=0.18.0
 unstructured>=0.12.0
 pdf2image>=1.17.0
 pytesseract>=0.3.10
