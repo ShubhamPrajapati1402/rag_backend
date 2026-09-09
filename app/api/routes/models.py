@@ -88,25 +88,25 @@ CATALOG_DEFINITIONS = [
         "is_inbuilt": False,
         "models": [
             {
-                "id": "llama-3.3-70b-versatile",
-                "name": "Llama 3.3 70B Versatile",
-                "description": "Meta's flagship open-weights model on Groq hardware.",
+                "id": "openai/gpt-oss-120b",
+                "name": "GPT-OSS 120B (Groq LPU)",
+                "description": "High-intelligence open reasoning model accelerated on Groq LPUs.",
+                "context_window": 131072,
+                "is_inbuilt": False,
+                "requires_api_key": True
+            },
+            {
+                "id": "openai/gpt-oss-20b",
+                "name": "GPT-OSS 20B (Groq LPU)",
+                "description": "Ultra-fast lightweight reasoning model optimized for sub-second responses.",
                 "context_window": 131072,
                 "is_inbuilt": False,
                 "requires_api_key": True
             },
             {
                 "id": "qwen/qwen3.8-27b",
-                "name": "Qwen 2.5 72B / 27B",
+                "name": "Qwen 3.8 27B (Groq LPU)",
                 "description": "Exceptional coding, math, and multilingual reasoning.",
-                "context_window": 131072,
-                "is_inbuilt": False,
-                "requires_api_key": True
-            },
-            {
-                "id": "deepseek-r1-distill-llama-70b",
-                "name": "DeepSeek R1 Distill 70B",
-                "description": "Fast reasoning distillation powered by Groq LPU.",
                 "context_window": 131072,
                 "is_inbuilt": False,
                 "requires_api_key": True

@@ -85,8 +85,7 @@ async def rerank_with_groq_fallback(query: str, documents: List[Dict[str, Any]])
 
     llm = get_groq_llm(
         temperature=0.1,
-        model_provider="groq",
-        model_name=settings.GROQ_MODEL_NAME
+        model_name=settings.GROQ_FALLBACK_MODEL_NAME or "openai/gpt-oss-20b"
     )
     response = await llm.ainvoke([
         SystemMessage(content=LISTWISE_RERANK_PROMPT),

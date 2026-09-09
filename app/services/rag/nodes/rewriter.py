@@ -24,13 +24,13 @@ async def rewriter_node(state: RAGState) -> dict:
     pronouns = {"it", "its", "they", "them", "their", "this", "that", "these", "those", "he", "she", "him", "her", "previous", "above"}
     has_pronoun = any(w.strip("?!.,'\"") in pronouns for w in words)
 
-    # Fast 0ms path: If document is already manually selected AND query has no pronouns, bypass LLM rewriter
-    if existing_doc_ids and len(existing_doc_ids) > 0 and (not has_pronoun or len(words) >= 5):
+    # Fast 0ms path 1: If document is already manually selected AND query has no pronouns (or is sufficiently descriptive)
+    if existing_doc_ids and len(existing_doc_ids) > 0 and (not has_pronoun or len(words) >= 4):
         logger.info(f"[RewriterNode] Manual document selection active ({existing_doc_ids}). Fast 0ms pass-through: '{question}'")
         return {"rewritten_query": question}
 
-    # If standalone query with no prior messages or pronouns, pass through in 0ms
-    if (len(messages) <= 1 and not summary and not has_pronoun and len(words) >= 3 and existing_doc_ids):
+    # Fast 0ms path 2: If standalone query with no prior messages or conversational pronouns, pass through in 0ms
+    if (len(messages) <= 1 and not summary and not has_pronoun and len(words) >= 3):
         logger.info(f"[RewriterNode] Standalone query detected. Fast 0ms pass-through: '{question}'")
         return {"rewritten_query": question}
 
@@ -59,13 +59,10 @@ async def rewriter_node(state: RAGState) -> dict:
         db.close()
 
     try:
+        from app.core.config import settings
         llm = get_groq_llm(
             temperature=0.1,
-            model_provider="groq",
-            model_name=None,  # Uses fast default Groq model (openai/gpt-oss-120b)
-            api_key=state.get("custom_api_key"),
-            base_url=state.get("custom_base_url"),
-            user_id=state.get("user_id")
+            model_name=settings.GROQ_FALLBACK_MODEL_NAME or "openai/gpt-oss-20b"
         )
         
         context_parts = []

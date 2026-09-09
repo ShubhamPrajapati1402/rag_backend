@@ -3,10 +3,11 @@ from typing import List, Dict, Any
 from loguru import logger
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.schemas.rag_state import RAGState, Citation
-from app.services.rag.llm import get_groq_llm, extract_text_content
+from app.services.rag.llm import get_llm, extract_text_content
 from app.services.rag.prompts import (
     GENERATOR_SYSTEM_PROMPT,
-    DIRECT_GENERATOR_SYSTEM_PROMPT
+    DIRECT_GENERATOR_SYSTEM_PROMPT,
+    FALLBACK_REFUSAL_SYSTEM_PROMPT
 )
 
 async def rag_generator_node(state: RAGState) -> dict:
@@ -61,7 +62,7 @@ async def rag_generator_node(state: RAGState) -> dict:
     context_text = "\n\n".join(context_blocks)
     prompt = f"Context Information:\n{context_text}\n\nUser Question:\n{question}\n\nAnswer:"
 
-    llm = get_groq_llm(
+    llm = get_llm(
         temperature=state.get("temperature", 0.3) or 0.3,
         model_provider=state.get("model_provider"),
         model_name=state.get("model_name"),
@@ -101,7 +102,7 @@ async def direct_generator_node(state: RAGState) -> dict:
             for m in messages[-4:]
         ]) + "\n\n"
 
-    llm = get_groq_llm(
+    llm = get_llm(
         temperature=state.get("temperature", 0.3) or 0.3,
         model_provider=state.get("model_provider"),
         model_name=state.get("model_name"),
@@ -117,12 +118,6 @@ async def direct_generator_node(state: RAGState) -> dict:
     return {"generation": extract_text_content(response.content).strip(), "citations": []}
 
 
-from app.services.rag.prompts import (
-    GENERATOR_SYSTEM_PROMPT,
-    DIRECT_GENERATOR_SYSTEM_PROMPT,
-    FALLBACK_REFUSAL_SYSTEM_PROMPT
-)
-
 async def fallback_generator_node(state: RAGState) -> dict:
     """
     Produces a dynamic, context-aware polite refusal when no relevant chunks are found in the documents.
@@ -130,7 +125,7 @@ async def fallback_generator_node(state: RAGState) -> dict:
     question = state.get("question", "")
     logger.info(f"[FallbackGeneratorNode] Generating dynamic polite refusal for query: '{question}'...")
 
-    llm = get_groq_llm(
+    llm = get_llm(
         temperature=state.get("temperature", 0.3) or 0.3,
         model_provider=state.get("model_provider"),
         model_name=state.get("model_name"),
