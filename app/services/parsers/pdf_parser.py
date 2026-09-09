@@ -8,7 +8,24 @@ from pypdf import PdfReader, PdfWriter
 from app.models.document_element import DocumentElement
 from app.services.parsers.base import BaseParser
 from app.services.classifier import classify_pdf_pages
-from app.services.validator import PDFValidator
+def safe_partition_pdf(filename: str, strategy: str = "fast", multiprocessing: bool = False):
+    from unstructured.partition.pdf import partition_pdf
+    try:
+        return partition_pdf(
+            filename=filename,
+            strategy=strategy,
+            multiprocessing=multiprocessing
+        )
+    except Exception as e:
+        err_str = str(e)
+        if "unstructured_inference" in err_str or strategy in ["hi_res", "ocr_only"]:
+            logger.warning(f"Strategy '{strategy}' failed ({e}). Gracefully falling back to 'fast' partition strategy.")
+            return partition_pdf(
+                filename=filename,
+                strategy="fast",
+                multiprocessing=False
+            )
+        raise
 
 class PDFParser(BaseParser):
     """
@@ -20,8 +37,6 @@ class PDFParser(BaseParser):
         self._cached_raw_elements = None # Store raw unstructured elements for chunking and validation
 
     def parse(self, file_path: str, **kwargs) -> List[DocumentElement]:
-        from unstructured.partition.pdf import partition_pdf
-        
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"PDF not found at: {file_path}")
             
@@ -30,7 +45,7 @@ class PDFParser(BaseParser):
         
         if strategy in ["hi_res", "fast"]:
             logger.info(f"Starting to parse PDF: {file_path} with strategy={strategy}")
-            raw_elements = partition_pdf(
+            raw_elements = safe_partition_pdf(
                 filename=file_path,
                 strategy=strategy,
                 multiprocessing=True,
@@ -79,7 +94,7 @@ class PDFParser(BaseParser):
                     with open(page_path, "wb") as f:
                         writer.write(f)
                         
-                    page_elements = partition_pdf(
+                    page_elements = safe_partition_pdf(
                         filename=page_path,
                         strategy=c.strategy,
                         multiprocessing=False
@@ -122,7 +137,7 @@ class PDFParser(BaseParser):
                     with open(page_path, "wb") as f:
                         writer.write(f)
                     
-                    page_elements = partition_pdf(
+                    page_elements = safe_partition_pdf(
                         filename=page_path,
                         strategy="hi_res",
                         multiprocessing=False

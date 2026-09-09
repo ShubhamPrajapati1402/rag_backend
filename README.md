@@ -172,13 +172,22 @@ flowchart TB
 
 ---
 
-### 5. Idempotent Version-Tracked Database Migrations
+### 5. Resilient Multi-Format Document Ingestion Engine
+* **Universal Parser Registry**: Native structured parsing for 10+ document formats (PDF, Markdown, TXT, CSV, TSV, Excel, DOCX, PPTX, JSON, HTML, XML).
+* **Intelligent Hybrid PDF Routing & Safe Fallback**:
+  * Employs heuristic page classification (`fast` vs `hi_res`).
+  * **Zero-Downtime Safe Fallback (`safe_partition_pdf`)**: Automatically guards against heavy vision/deep-learning module crashes (e.g. `unstructured_inference`), dynamically degrading to lightweight extraction (`pdfminer.six` / `pypdf`) with < 50MB RAM consumption.
+* **Semantic Title-Aware Chunking**: Intelligently breaks text along section boundaries with character and overlap budgeting.
+
+---
+
+### 6. Idempotent Version-Tracked Database Migrations
 * **Automatic Startup Migrations**: `app/db/migrations/` tracks applied SQL migrations in a dedicated `schema_migrations` ledger table.
 * **Zero-Downtime Schema Evolution**: Automatically applies new column additions, foreign keys, and indexes on server boot without manual SQL execution.
 
 ---
 
-### 6. 3-Tier Role-Based Access Control (RBAC) & Developer Collaboration
+### 7. 3-Tier Role-Based Access Control (RBAC) & Developer Collaboration
 * **Super Admin (`👑`)**: Root platform owner defined in `DEVELOPER_EMAILS`. Can manage team roles and run benchmarks.
 * **Admin (`🛡️`)**: Team administrator. Can invite members with tokenized 48-hour links (`/api/v1/auth/invite-developer`).
 * **Member (`💻`)**: Analyst / Developer. Can execute RAGAs benchmarks and audit atomic claim scorecards.
