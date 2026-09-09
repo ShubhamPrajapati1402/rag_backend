@@ -4,16 +4,15 @@ import time
 from loguru import logger
 from pypdf import PdfReader, PdfWriter
 from app.services.classifier import classify_pdf_pages
+from app.services.parsers.pdf_parser import safe_partition_pdf
 
 def extract_raw_elements(file_path: str, strategy: str = "hi_res", fallback_pages: list = None):
-    from unstructured.partition.pdf import partition_pdf
-    
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"PDF not found at: {file_path}")
         
     if strategy in ["hi_res", "fast"]:
         logger.info(f"Starting to parse PDF: {file_path} with strategy={strategy}")
-        elements = partition_pdf(
+        elements = safe_partition_pdf(
             filename=file_path,
             strategy=strategy,
             multiprocessing=True,
@@ -65,7 +64,7 @@ def extract_raw_elements(file_path: str, strategy: str = "hi_res", fallback_page
                     writer.write(f)
                     
                 # Process with Unstructured
-                elements = partition_pdf(
+                elements = safe_partition_pdf(
                     filename=page_path,
                     strategy=c.strategy,
                     multiprocessing=False
@@ -111,7 +110,7 @@ def extract_raw_elements(file_path: str, strategy: str = "hi_res", fallback_page
                 with open(page_path, "wb") as f:
                     writer.write(f)
                 
-                elements = partition_pdf(
+                elements = safe_partition_pdf(
                     filename=page_path,
                     strategy="hi_res",
                     multiprocessing=False
