@@ -8,6 +8,7 @@ from pypdf import PdfReader, PdfWriter
 from app.models.document_element import DocumentElement
 from app.services.parsers.base import BaseParser
 from app.services.classifier import classify_pdf_pages
+from app.services.validator import PDFValidator
 def safe_partition_pdf(filename: str, strategy: str = "fast", multiprocessing: bool = False):
     from unstructured.partition.pdf import partition_pdf
     try:
