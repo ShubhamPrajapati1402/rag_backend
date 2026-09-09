@@ -39,13 +39,10 @@ async def input_guardrail_node(state: RAGState) -> dict:
     # If the prompt has suspicious characters or structure, run LLM security evaluation
     if any(k in lower_q for k in ("system prompt", "instructions", "dan", "jailbreak", "bypass")):
         try:
+            from app.core.config import settings
             llm = get_groq_llm(
-                temperature=0.3,
-                model_provider=state.get("model_provider"),
-                model_name=state.get("model_name"),
-                api_key=state.get("custom_api_key"),
-                base_url=state.get("custom_base_url"),
-                user_id=state.get("user_id")
+                temperature=0.1,
+                model_name=settings.GROQ_FALLBACK_MODEL_NAME or "openai/gpt-oss-20b"
             )
             response = await llm.ainvoke([
                 SystemMessage(content=INPUT_GUARDRAIL_PROMPT),

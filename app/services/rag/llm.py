@@ -277,24 +277,13 @@ def get_groq_llm(
     user_id: Optional[int] = None
 ) -> Any:
     """
-    High-Speed Intermediate Node LLM Factory (Sub-200ms latency).
+    High-Speed Intermediate Node LLM Factory (Sub-500ms latency).
     Prioritizes Groq LPU for ultra-fast internal tasks (router, rewriter, grader, guardrail),
     with seamless fallback to standard multi-provider chain.
     """
-    # If custom BYOK provider explicitly specified (e.g. user selected Anthropic/OpenAI)
-    if model_provider and model_provider not in ("inbuilt", "groq", "default"):
-        return get_llm(
-            temperature=temperature,
-            model_provider=model_provider,
-            model_name=model_name,
-            api_key=api_key,
-            base_url=base_url,
-            user_id=user_id
-        )
-
-    # Use ultra-fast Groq LPU (~100-200ms) when Groq API key is present
+    # Use ultra-fast Groq LPU (~300-900ms) whenever Groq API key is present
     if settings.GROQ_API_KEY:
-        groq_model = model_name or settings.GROQ_MODEL_NAME or settings.GROQ_FALLBACK_MODEL_NAME or "openai/gpt-oss-120b"
+        groq_model = model_name or settings.GROQ_FALLBACK_MODEL_NAME or settings.GROQ_MODEL_NAME or "openai/gpt-oss-20b"
         fast_groq = ChatGroq(
             model_name=groq_model,
             groq_api_key=settings.GROQ_API_KEY,
@@ -308,7 +297,7 @@ def get_groq_llm(
 
     return get_llm(
         temperature=temperature,
-        model_provider=model_provider,
+        model_provider=model_provider or "inbuilt",
         model_name=model_name,
         api_key=api_key,
         base_url=base_url,
