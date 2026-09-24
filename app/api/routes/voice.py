@@ -24,14 +24,16 @@ class TTSRequest(BaseModel):
 
 @router.post("/stt", summary="Transcribe Speech to Text (STT)")
 async def speech_to_text(
-    file: UploadFile = File(..., description="Audio file blob recorded from client microphone"),
+    file: Optional[UploadFile] = File(None, description="Audio file blob recorded from client microphone"),
+    audio: Optional[UploadFile] = File(None, description="Audio file blob recorded from client microphone (alias)"),
     language: Optional[str] = Query(None, description="Optional ISO-639-1 language code (e.g. 'en')"),
 ):
     """Transcribe an in-memory audio recording to text using Groq Whisper Large v3 Turbo.
     
     Supports formats: webm, wav, mp3, ogg, m4a, flac.
     """
-    if not file:
+    target_file = file or audio
+    if not target_file:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No audio file uploaded",
@@ -39,7 +41,7 @@ async def speech_to_text(
 
     # Read binary content
     try:
-        audio_bytes = await file.read()
+        audio_bytes = await target_file.read()
     except Exception as e:
         logger.error(f"Failed to read incoming audio stream: {e}")
         raise HTTPException(
@@ -53,7 +55,7 @@ async def speech_to_text(
             detail="Uploaded audio file is empty",
         )
 
-    filename = file.filename or "audio.webm"
+    filename = target_file.filename or "audio.webm"
     try:
         transcript = await voice_service.transcribe_audio(
             audio_bytes=audio_bytes,
@@ -74,6 +76,7 @@ async def speech_to_text(
 
 
 @router.get("/tts", summary="Stream Text to Speech (TTS)")
+@router.get("/stream", summary="Stream Text to Speech (Alias)")
 async def text_to_speech_get(
     text: str = Query(..., min_length=1, description="Text to synthesize into speech"),
     voice: Optional[str] = Query(None, description="Voice ID (defaults to settings.VOICE_DEFAULT_TTS_VOICE)"),
